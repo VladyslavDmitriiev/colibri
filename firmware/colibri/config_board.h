@@ -23,6 +23,7 @@
 // - Experimental/developers only:
 // #include "src/boards/s2_wemos_d1mini.h";
 // #include "src/boards/s3_wroom_camera.h";
+// #include "src/boards/s3_waveshare_3_5in_touch_lcd.h";
 
 //*/
 // >>>> ...OR set up custom board below:
