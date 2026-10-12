@@ -187,6 +187,12 @@ bool decodeEip1559Tx(const uint8_t* data, size_t dataLen, EthTxData& tx) {
 
   tx.isEip1559 = true;
 
+  // skip the transaction type prefix (EIP-2718), as sent in EIP-4527 sign requests
+  if (dataLen > 0 && data[0] == 0x02) {
+    data++;
+    dataLen--;
+  }
+
   // parse RLP data
   RLPParser parser;
   rlp_init(&parser, data, dataLen);
