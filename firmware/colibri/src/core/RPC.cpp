@@ -472,7 +472,12 @@ void JsonRpcHandler::handleRequest(const std::string& input, std::string& output
     methods[request[RPC_METHOD]].handle(request, response);
   }
 
-  displayMessage(response.containsKey(RPC_ERROR) ? DISPLAY_ERROR : DISPLAY_SUCCESS);
+  if (response.containsKey(RPC_ERROR)) {
+    displayMessage(DISPLAY_ERROR);
+  } else if (request[RPC_METHOD] != RPC_METHOD_UR_PAIR) {
+    // keep the pairing QR code on screen
+    displayMessage(DISPLAY_SUCCESS);
+  }
 
   // serialize response
   serializeJson(response, output);
