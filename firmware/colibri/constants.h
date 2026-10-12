@@ -130,6 +130,20 @@ const char DISPLAY_NOT_CONNECTED[] = "Not Connected";
 const char DISPLAY_LOCKED[] = "Locked";
 const char DISPLAY_SCAN_QR[] = "Scan QR";
 const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
+#ifdef BUTTON_LAYOUT_MAIN_TWO
+  #define DISPLAY_HINT_APPROVE "Approve: press OK"
+  #define DISPLAY_HINT_REJECT "Reject: press Cancel"
+#else
+  #define DISPLAY_HINT_APPROVE "Approve: press button twice"
+  #define DISPLAY_HINT_REJECT "Reject: hold button"
+#endif
+// line styles for multi-line display text, set by the first char of a line
+#define DISPLAY_LINE_TITLE "\x01"
+#define DISPLAY_LINE_WARNING "\x02"  // warning title
+#define DISPLAY_LINE_DANGER "\x03"  // danger title
+#define DISPLAY_LINE_BIG "\x04"
+#define DISPLAY_LINE_NOTE "\x05"
+#define DISPLAY_LINE_ALERT "\x06"  // danger text
 
 // ===== Storage ===== //
 const char STORAGE_NVS_PARTITION_NAME[] = NVS_PARTITION_NAME;

@@ -10,56 +10,96 @@
 static TFT_eSPI display;
 // static TFT_eSprite sprite(&display);
 
-// Splits text at newlines and wraps lines longer than `maxChars`
-static std::vector<std::string> wrapText(const char* message, size_t maxChars) {
-  std::vector<std::string> lines;
-  std::string line;
-  for (const char* c = message;; c++) {
-    if (*c == '\n' || *c == '\0') {
-      lines.push_back(line);
-      line.clear();
-      if (*c == '\0') break;
-      continue;
-    }
-    if (line.size() >= maxChars) {
-      lines.push_back(line);
-      line.clear();
-    }
-    line += *c;
+struct TextLine {
+  std::string text;
+  char style;  // DISPLAY_LINE_* char, 0 for plain text
+};
+
+static bool isLineStyle(char c) { return c >= DISPLAY_LINE_TITLE[0] && c <= DISPLAY_LINE_ALERT[0]; }
+
+static float lineTextSize(char style, float baseSize) {
+  return style == DISPLAY_LINE_BIG[0] ? baseSize * 1.5f : baseSize;
+}
+
+static uint32_t lineColor(char style) {
+  switch (style) {
+    case DISPLAY_LINE_TITLE[0]: return TFT_WHITE;
+    case DISPLAY_LINE_WARNING[0]: return TFT_YELLOW;
+    case DISPLAY_LINE_DANGER[0]:
+    case DISPLAY_LINE_ALERT[0]: return TFT_RED;
+    case DISPLAY_LINE_NOTE[0]: return TFT_LIGHTGREY;
+    default: return DISPLAY_COLOR_TEXT;
+  }
+}
+
+// Splits text at newlines, takes the style prefix of each line and wraps lines wider
+// than the frame, at the last space if there is one
+static std::vector<TextLine> layoutText(const char* message, float baseSize, int32_t maxWidth) {
+  std::vector<TextLine> lines;
+  const char* c = message;
+  while (true) {
+    const char* end = strchr(c, '\n');
+    std::string raw = end ? std::string(c, end - c) : std::string(c);
+    char style = (!raw.empty() && isLineStyle(raw[0])) ? raw[0] : 0;
+    if (style) raw.erase(0, 1);
+
+    display.setTextSize(lineTextSize(style, baseSize));
+    size_t maxChars = maxWidth / display.textWidth("0");
+    if (maxChars < 1) maxChars = 1;
+    do {
+      size_t n = raw.size();
+      if (n > maxChars) {
+        size_t space = raw.rfind(' ', maxChars);
+        n = (space != std::string::npos && space > 0) ? space : maxChars;
+      }
+      lines.push_back({raw.substr(0, n), style});
+      raw.erase(0, n);
+      if (!raw.empty() && raw[0] == ' ') raw.erase(0, 1);
+    } while (!raw.empty());
+
+    if (!end) break;
+    c = end + 1;
   }
   return lines;
 }
 
-// Centered text, multiple lines separated by `\n`. Long lines wrap, and the text
-// falls back to the small font size if it doesn't fit the frame.
+// line pitch with spacing, so multi-line text stays readable
+static int32_t lineHeight(const TextLine& line, float baseSize) {
+  display.setTextSize(lineTextSize(line.style, baseSize));
+  return display.fontHeight() * 3 / 2;
+}
+
+// Centered text, multiple lines separated by `\n`, each optionally styled by a DISPLAY_LINE_*
+// prefix. Long lines wrap, and the text falls back to the small font size if it doesn't fit.
 void drawText(const char* message) {
   display.startWrite();
   display.clearDisplay();
   display.fillScreen(DISPLAY_COLOR_BG);
-  display.setTextColor(DISPLAY_COLOR_TEXT);
-
   display.setFont(&fonts::Font0);
-  float textSize = 1.0f;
+
+  float baseSize = 1.0f;
   #ifndef DISPLAY_SMALL
-  textSize = 2.0f;
+  baseSize = 2.0f;
   #endif
 
   const int32_t padding = 10;
-  std::vector<std::string> lines;
+  std::vector<TextLine> lines;
+  int32_t totalHeight;
   while (true) {
-    display.setTextSize(textSize);
-    size_t maxChars = (display.width() - 2 * padding) / display.textWidth("0");
-    lines = wrapText(message, maxChars > 0 ? maxChars : 1);
-    if (textSize <= 1.0f || (int32_t)lines.size() * display.fontHeight() <= display.height() - 2 * padding) break;
-    textSize = 1.0f;
+    lines = layoutText(message, baseSize, display.width() - 2 * padding);
+    totalHeight = 0;
+    for (const TextLine& line : lines) totalHeight += lineHeight(line, baseSize);
+    if (baseSize <= 1.0f || totalHeight <= display.height() - 2 * padding) break;
+    baseSize = 1.0f;
   }
 
-  int32_t lineHeight = display.fontHeight();
-  int32_t y = (display.height() - (int32_t)lines.size() * lineHeight) / 2 + lineHeight / 2;
+  int32_t y = (display.height() - totalHeight) / 2;
   display.setTextDatum(middle_center);
-  for (const std::string& line : lines) {
-    display.drawString(line.c_str(), display.width() / 2, y);
-    y += lineHeight;
+  for (const TextLine& line : lines) {
+    int32_t h = lineHeight(line, baseSize);
+    display.setTextColor(lineColor(line.style));
+    display.drawString(line.text.c_str(), display.width() / 2, y + h / 2);
+    y += h;
   }
 
   display.drawRect(5, 5, display.width() - 10, display.height() - 10, DISPLAY_COLOR_TEXT);

@@ -538,7 +538,7 @@ WalletResponse Wallet::signDigest(std::string& hexDigest) {
 
 WalletResponse Wallet::signEthTransaction(EthTxData& tx) {
   if (isLocked()) return WalletResponse(Unauthorized, RPC_ERROR_LOCKED);
-  std::string review = std::string(DISPLAY_APPROVE_SIGN_TX) + "\n\n" + ethFormatTransaction(tx);
+  std::string review = ethFormatTransaction(tx);
   if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
   uint8_t sig[RECOVERABLE_SIGNATURE_LENGTH];
 
@@ -654,7 +654,7 @@ WalletResponse Wallet::urSign(UR& ur) {
           }
 
           // display transaction details for user approval
-          std::string review = std::string(DISPLAY_APPROVE_SIGN_TX) + "\n\n" + ethFormatTransaction(tx);
+          std::string review = ethFormatTransaction(tx);
           if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
           // signature with v as wallets expect it to build the signed tx (EIP-4527 / Keystone):

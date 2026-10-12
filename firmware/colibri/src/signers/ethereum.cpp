@@ -345,23 +345,60 @@ struct EthChainInfo {
   uint64_t chainId;
   const char* name;
   const char* symbol;
+  bool isTestnet;
 };
 
 static const EthChainInfo ethChains[] = {
-    {1, "Ethereum", "ETH"},
-    {10, "Optimism", "ETH"},
-    {56, "BNB Chain", "BNB"},
-    {97, "BNB Testnet", "tBNB"},
-    {137, "Polygon", "POL"},
-    {8453, "Base", "ETH"},
-    {17000, "Holesky", "ETH"},
-    {42161, "Arbitrum", "ETH"},
-    {11155111, "Sepolia", "ETH"},
+    {1, "Ethereum", "ETH", false},
+    {10, "Optimism", "ETH", false},
+    {56, "BNB Chain", "BNB", false},
+    {97, "BNB Testnet", "tBNB", true},
+    {137, "Polygon", "POL", false},
+    {8453, "Base", "ETH", false},
+    {17000, "Holesky", "ETH", true},
+    {42161, "Arbitrum", "ETH", false},
+    {11155111, "Sepolia", "ETH", true},
+};
+
+struct EthTokenInfo {
+  uint64_t chainId;
+  const char* address;
+  const char* symbol;
+  uint8_t decimals;
+};
+
+// well known tokens, to show amounts in their units
+static const EthTokenInfo ethTokens[] = {
+    {1, "0xdAC17F958D2ee523a2206206994597C13D831ec7", "USDT", 6},
+    {1, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "USDC", 6},
+    {1, "0x6B175474E89094C44Da98b954EedeAC495271d0F", "DAI", 18},
+    {1, "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "WETH", 18},
+    {1, "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", "WBTC", 8},
+    {10, "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", "USDC", 6},
+    {56, "0x55d398326f99059fF775485246999027B3197955", "USDT", 18},
+    {56, "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", "USDC", 18},
+    {56, "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", "WBNB", 18},
+    {137, "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", "USDT", 6},
+    {137, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", "USDC", 6},
+    {8453, "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "USDC", 6},
+    {42161, "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", "USDT", 6},
+    {42161, "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "USDC", 6},
+    {42161, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "WETH", 18},
 };
 
 static const EthChainInfo* ethFindChain(uint64_t chainId) {
   for (const EthChainInfo& c : ethChains) {
     if (c.chainId == chainId) return &c;
+  }
+  return nullptr;
+}
+
+static const EthTokenInfo* ethFindToken(uint64_t chainId, const uint8_t address[ADDRESS_LENGTH]) {
+  uint8_t tokenAddress[ADDRESS_LENGTH];
+  for (const EthTokenInfo& t : ethTokens) {
+    if (t.chainId != chainId) continue;
+    fromHex(t.address, tokenAddress, ADDRESS_LENGTH);
+    if (memcmp(tokenAddress, address, ADDRESS_LENGTH) == 0) return &t;
   }
   return nullptr;
 }
@@ -400,9 +437,15 @@ static std::string ethFormatUint256(const uint8_t value[32], unsigned int decima
   return out;
 }
 
+// EIP-55 address in groups of 4 chars, easier to compare with the address shown by the app
 static std::string ethFormatAddress(const uint8_t* address) {
-  char out[2 + 2 * ADDRESS_LENGTH + 1];  // EIP-55, 0x prefixed
-  ethereum_address_checksum(address, out, false, 0);
+  char hex[2 + 2 * ADDRESS_LENGTH + 1];
+  ethereum_address_checksum(address, hex, false, 0);
+  std::string out(hex, 6);
+  for (size_t i = 6; i < 2 + 2 * ADDRESS_LENGTH; i += 4) {
+    out += " ";
+    out.append(hex + i, 4);
+  }
   return out;
 }
 
@@ -413,58 +456,113 @@ static bool ethReadAbiAddress(const uint8_t* word, uint8_t address[ADDRESS_LENGT
   return true;
 }
 
-// Multi-line summary of a transaction for the user to review before signing.
-// ERC-20 `transfer` and `approve` calls show the recipient / spender and the raw token amount.
+static std::string ethFormatTokenAmount(const uint8_t amount[32], const EthTokenInfo* token) {
+  if (token) return ethFormatUint256(amount, token->decimals, (std::string(" ") + token->symbol).c_str());
+  return ethFormatUint256(amount, 0, " units");
+}
+
+static const uint8_t SELECTOR_TRANSFER[4] = {0xa9, 0x05, 0x9c, 0xbb};  // transfer(address,uint256)
+static const uint8_t SELECTOR_APPROVE[4] = {0x09, 0x5e, 0xa7, 0xb3};  // approve(address,uint256)
+static const uint8_t SELECTOR_INCREASE_ALLOWANCE[4] = {0x39, 0x50, 0x93, 0x51};  // increaseAllowance(address,uint256)
+static const uint8_t SELECTOR_SET_APPROVAL_FOR_ALL[4] = {0xa2, 0x2c, 0xb4, 0x65};  // setApprovalForAll(address,bool)
+
+// Plain language summary of a transaction for the user to review before signing, with
+// warnings for common scams and mistakes. Lines are styled with DISPLAY_LINE_* prefixes.
 std::string ethFormatTransaction(const EthTxData& tx) {
   const EthChainInfo* chain = ethFindChain(tx.chainId);
-  std::string symbol = chain ? std::string(" ") + chain->symbol : " (native)";
-  uint8_t num[32];
-  std::string text;
+  std::string nativeSymbol = chain ? std::string(" ") + chain->symbol : " coins";
+  uint8_t zeroAddress[ADDRESS_LENGTH] = {0};
+  uint8_t value[32], num[32];
+  ethReadUint256(tx.value, tx.valueSize, value);
+  bool hasValue = !isAllZero(value, 32);
 
-  text += "Chain: ";
-  if (chain) text += std::string(chain->name) + " ";
-  text += "(" + std::to_string(tx.chainId) + ")\n";
-
-  static const uint8_t SELECTOR_TRANSFER[4] = {0xa9, 0x05, 0x9c, 0xbb};
-  static const uint8_t SELECTOR_APPROVE[4] = {0x09, 0x5e, 0xa7, 0xb3};
+  // two arg calls: (address, uint256 / bool)
   uint8_t arg[ADDRESS_LENGTH];
-  bool isTokenCall = tx.dataSize == 4 + 2 * 32 && isAllZero(tx.value, tx.valueSize) &&
-                     (memcmp(tx.data, SELECTOR_TRANSFER, 4) == 0 || memcmp(tx.data, SELECTOR_APPROVE, 4) == 0) &&
-                     ethReadAbiAddress(tx.data + 4, arg);
+  bool hasTwoArgs = tx.dataSize == 4 + 2 * 32 && ethReadAbiAddress(tx.data + 4, arg);
+  const uint8_t* amount = tx.data + 4 + 32;
+  bool isCall = tx.dataSize > 0;
+  auto isSelector = [&](const uint8_t selector[4]) { return hasTwoArgs && memcmp(tx.data, selector, 4) == 0; };
 
-  if (isTokenCall) {
-    bool isApprove = memcmp(tx.data, SELECTOR_APPROVE, 4) == 0;
-    const uint8_t* amount = tx.data + 4 + 32;
-    text += "Token: " + ethFormatAddress(tx.to) + "\n";
-    text += std::string(isApprove ? "APPROVE spender: " : "Transfer to: ") + ethFormatAddress(arg) + "\n";
+  std::string text;
+  std::string alerts;
+
+  if (!isCall) {
+    text += DISPLAY_LINE_TITLE "SEND\n";
+    text += DISPLAY_LINE_BIG + ethFormatUint256(value, 18, nativeSymbol.c_str()) + "\n";
+    text += "To:\n" + ethFormatAddress(tx.to) + "\n";
+    if (memcmp(tx.to, zeroAddress, ADDRESS_LENGTH) == 0) {
+      alerts += DISPLAY_LINE_ALERT "The zero address: coins sent there are lost forever!\n";
+    }
+  } else if (isSelector(SELECTOR_TRANSFER) && !hasValue) {
+    const EthTokenInfo* token = ethFindToken(tx.chainId, tx.to);
+    text += DISPLAY_LINE_TITLE "SEND TOKEN\n";
+    text += DISPLAY_LINE_BIG + ethFormatTokenAmount(amount, token) + "\n";
+    text += "To:\n" + ethFormatAddress(arg) + "\n";
+    if (!token) {
+      text += "Token contract:\n" + ethFormatAddress(tx.to) + "\n";
+      text += DISPLAY_LINE_NOTE "Unknown token, amount in its smallest units\n";
+    }
+    if (memcmp(arg, tx.to, ADDRESS_LENGTH) == 0) {
+      alerts += DISPLAY_LINE_ALERT "Sending a token to its own contract: it is lost forever!\n";
+    } else if (memcmp(arg, zeroAddress, ADDRESS_LENGTH) == 0) {
+      alerts += DISPLAY_LINE_ALERT "The zero address: tokens sent there are lost forever!\n";
+    }
+  } else if ((isSelector(SELECTOR_APPROVE) || isSelector(SELECTOR_INCREASE_ALLOWANCE)) && !hasValue) {
+    const EthTokenInfo* token = ethFindToken(tx.chainId, tx.to);
     uint8_t max[32];
     memset(max, 0xff, sizeof(max));
-    if (isApprove && memcmp(amount, max, 32) == 0) {
-      text += "Amount: UNLIMITED\n";
+    bool isUnlimited = memcmp(amount, max, 32) == 0;
+    std::string symbol = token ? token->symbol : "tokens";
+    bool isRevoke = isAllZero(amount, 32) && isSelector(SELECTOR_APPROVE);
+
+    if (isRevoke) {
+      text += DISPLAY_LINE_TITLE "REMOVE SPENDING PERMISSION\n";
+      text += "Who can no longer spend your " + symbol + ":\n" + ethFormatAddress(arg) + "\n";
     } else {
-      text += "Amount: " + ethFormatUint256(amount, 0, " (raw)") + "\n";
+      text += std::string(isUnlimited ? DISPLAY_LINE_DANGER : DISPLAY_LINE_WARNING) + "ALLOW SPENDING\n";
+      text += DISPLAY_LINE_BIG + (isUnlimited ? "ALL your " + symbol : ethFormatTokenAmount(amount, token)) + "\n";
+      text += "Who can spend it:\n" + ethFormatAddress(arg) + "\n";
+      text += DISPLAY_LINE_NOTE "They can take it any time without asking you again. Allow only apps you trust.\n";
     }
+    if (!token) text += "Token contract:\n" + ethFormatAddress(tx.to) + "\n";
+  } else if (isSelector(SELECTOR_SET_APPROVAL_FOR_ALL) && !hasValue && isAllZero(amount, 31) && amount[31] <= 1) {
+    if (amount[31]) {
+      text += DISPLAY_LINE_DANGER "ALLOW ACCESS TO ALL YOUR NFTs\n";
+      text += "Who gets access:\n" + ethFormatAddress(arg) + "\n";
+      text += DISPLAY_LINE_NOTE "They can take every NFT of this collection you own. Common scam!\n";
+    } else {
+      text += DISPLAY_LINE_TITLE "REMOVE NFT ACCESS\n";
+      text += "Who loses access:\n" + ethFormatAddress(arg) + "\n";
+    }
+    text += "Collection:\n" + ethFormatAddress(tx.to) + "\n";
   } else {
-    text += "To: " + ethFormatAddress(tx.to) + "\n";
-    ethReadUint256(tx.value, tx.valueSize, num);
-    text += "Value: " + ethFormatUint256(num, 18, symbol.c_str()) + "\n";
+    text += DISPLAY_LINE_WARNING "CONTRACT INTERACTION\n";
+    text += DISPLAY_LINE_NOTE "This device can't read what it does. Sign only if you trust the app.\n";
+    if (hasValue) text += DISPLAY_LINE_BIG "Pays " + ethFormatUint256(value, 18, nativeSymbol.c_str()) + "\n";
+    text += "Contract:\n" + ethFormatAddress(tx.to) + "\n";
+    if (tx.dataSize >= 4) text += DISPLAY_LINE_NOTE "Action ID " + toHex(tx.data, 4, true) + "\n";
   }
 
-  // worst case fee: gas limit * max fee per gas (gas price for legacy txs)
+  // network and worst case fee: gas limit * max fee per gas (gas price for legacy txs)
+  text += "\nNetwork: ";
+  text += chain ? chain->name : "unknown (ID " + std::to_string(tx.chainId) + ")";
+  text += "\n";
+  if (chain && chain->isTestnet) text += DISPLAY_LINE_NOTE "Test network, no real money\n";
+  if (!chain) alerts += DISPLAY_LINE_ALERT "Unknown network: check it in your app\n";
+
   uint8_t gasLimit[32], gasPrice[32];
   ethReadUint256(tx.gasLimit, tx.gasLimitSize, gasLimit);
   ethReadUint256(tx.maxGasFee, tx.maxGasFeeSize, gasPrice);
-  text += "Max fee: ";
-  text += ethMulUint256(gasLimit, gasPrice, num) ? ethFormatUint256(num, 18, symbol.c_str()) : "OVERFLOW";
-  text += "\n";
-
-  ethReadUint256(tx.nonce, tx.nonceSize, num);
-  text += "Nonce: " + ethFormatUint256(num, 0, NULL);
-
-  if (!isTokenCall && tx.dataSize > 0) {
-    text += "\nData: " + std::to_string(tx.dataSize) + " bytes";
-    if (tx.dataSize >= 4) text += " " + toHex(tx.data, 4, true);
+  if (ethMulUint256(gasLimit, gasPrice, num)) {
+    text += "Network fee: up to " + ethFormatUint256(num, 18, nativeSymbol.c_str()) + "\n";
+    if (hasValue && memcmp(num, value, 32) > 0) {
+      alerts += DISPLAY_LINE_ALERT "The fee is higher than the amount!\n";
+    }
+  } else {
+    alerts += DISPLAY_LINE_ALERT "Absurdly high network fee!\n";
   }
 
+  if (!alerts.empty()) text += "\n" + alerts;
+  while (!text.empty() && text.back() == '\n') text.pop_back();
   return text;
 }

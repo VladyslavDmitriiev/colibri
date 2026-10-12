@@ -112,7 +112,13 @@ bool waitForApproval(const char* text, RgbColor color) {
     wallet.timeLastActivity = millis();
   }
 
+#ifndef DISPLAY_SMALL
+  // tell the user how to answer
+  std::string prompt = std::string(text) + "\n\n" DISPLAY_LINE_NOTE DISPLAY_HINT_APPROVE "\n" DISPLAY_LINE_NOTE DISPLAY_HINT_REJECT;
+  displayMessage(prompt.c_str());
+#else
   displayMessage(text);
+#endif
 
   // set led hot
   isHot = true;
