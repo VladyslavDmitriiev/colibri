@@ -174,7 +174,7 @@
 
 // - ESP32 hardware RNG depends on antenna activity
 #if (defined(INTERFACE_BLE_DISABLED))
-  #warning "BLE disabled, bundling `WiFi` library as a fallback for true RNG instead"
+  #warning "BLE disabled, using the SAR ADC as entropy source for true RNG instead"
   #define RNG_ANTENNA_DISABLED
 #endif
 

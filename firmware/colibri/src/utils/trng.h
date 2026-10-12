@@ -6,7 +6,7 @@
 #include "../../config.h"
 
 #if defined(RNG_ANTENNA_DISABLED)
-  #include <WiFi.h>
+  #include <bootloader_random.h>
 #endif
 
 extern "C" {

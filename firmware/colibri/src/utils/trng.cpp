@@ -4,24 +4,20 @@
 #include "trng.h"
 
 #if defined(RNG_ANTENNA_DISABLED)
-// make sure antenna is on for RNG
-bool turnWifiOff = false;
+// without a running radio, use the SAR ADC as entropy source for the hardware RNG
+// (no Wi-Fi/BT may run and no ADC may be used in the meantime)
+  #if defined(OTA_ENABLED)
+extern bool isOtaActive;  // the OTA access point's radio is entropy source enough
+  #else
+const bool isOtaActive = false;
+  #endif
 
 void hwRngBegin() {
-  // Wifi is already running:
-  if (WiFi.getMode() != WIFI_OFF) return;
-
-  // turn on temporarily if off:
-  WiFi.mode(WIFI_STA);
-  turnWifiOff = true;
-  delay(50);
+  if (!isOtaActive) bootloader_random_enable();
 }
 
 void hwRngEnd() {
-  if (turnWifiOff) {
-    WiFi.mode(WIFI_OFF);
-    turnWifiOff = false;
-  }
+  if (!isOtaActive) bootloader_random_disable();
 }
 
 #else
