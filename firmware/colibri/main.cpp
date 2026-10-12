@@ -54,6 +54,11 @@ Connection connection = NotConnected;
 void setup() {
   led_turnOn(RgbColor::Busy);
 
+#ifdef BOARD_INIT
+  // board specific setup, e.g. power management or IO expanders
+  BOARD_INIT();
+#endif
+
   // display setup & boot screen
   initDisplay();
 
