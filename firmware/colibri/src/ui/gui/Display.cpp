@@ -39,6 +39,44 @@ void initDisplay() {
   delay(500);
 }
 
+// Downscaled grayscale camera frame at the top, a status line below, for aiming at QR codes
+void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const char* status) {
+  size_t step = (width + display.width() - 1) / display.width();
+  if (step < 1) step = 1;
+  size_t w = width / step;
+  size_t h = height / step;
+  int32_t x0 = (display.width() - w) / 2;
+
+  static lgfx::rgb565_t* line = nullptr;
+  static size_t lineWidth = 0;
+  if (lineWidth < w) {
+    free(line);
+    line = (lgfx::rgb565_t*)malloc(w * sizeof(lgfx::rgb565_t));
+    lineWidth = line ? w : 0;
+    if (!line) return;
+  }
+
+  display.startWrite();
+  for (size_t y = 0; y < h; y++) {
+    const uint8_t* row = gray + (y * step) * width;
+    for (size_t x = 0; x < w; x++) {
+      uint8_t g = row[x * step];
+      line[x] = lgfx::rgb565_t(g, g, g);
+    }
+    display.pushImage(x0, y, w, 1, line);
+  }
+
+  if (status) {
+    display.fillRect(0, h, display.width(), display.height() - h, DISPLAY_COLOR_BG);
+    display.setTextColor(DISPLAY_COLOR_TEXT);
+    display.setFont(&fonts::Font0);
+    display.setTextSize(2.0f);
+    display.setTextDatum(middle_center);
+    display.drawString(status, display.width() / 2, h + (display.height() - h) / 2);
+  }
+  display.endWrite();
+}
+
 void drawQrCode(esp_qrcode_handle_t qrCode) {
   #ifndef DISPLAY_SMALL
 

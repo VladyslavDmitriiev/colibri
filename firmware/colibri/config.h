@@ -420,6 +420,10 @@
   #ifndef CAMERA_SCAN_TIMEOUT
     #define CAMERA_SCAN_TIMEOUT 5000  // ms without a new part before a multi-part scan is dropped
   #endif
+  // live camera image on screen to aim at QR codes
+  #if defined(DISPLAY_ENABLED) && !defined(DISPLAY_SMALL) && !defined(CAMERA_PREVIEW_DISABLED)
+    #define CAMERA_PREVIEW
+  #endif
   #ifndef CAMERA_KEY_CHECK_INTERVAL
     #define CAMERA_KEY_CHECK_INTERVAL 1000  // ms between checks for a key while there is none
   #endif

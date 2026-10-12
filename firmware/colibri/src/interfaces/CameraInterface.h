@@ -50,12 +50,20 @@ class CameraInterface : public Interface {
   bool isShowingResult;
   uint64_t timeLastKeyCheck;
   bool isReady;
+  char status[24] = {0};
+  bool statusChanged = false;
+  struct {
+    uint32_t frames, codes, errors;
+    uint64_t since;
+  } stats = {0, 0, 0, 0};
 
   bool scanFrame(std::string& payload);
   void receivePart(const std::string& payload);
   void handleUr(UR& ur);
   void resetDecoder();
   void showIdle();
+  void setStatus(const char* text);
+  void logStats();
 };
 
 #endif

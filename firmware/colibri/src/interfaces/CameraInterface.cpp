@@ -130,7 +130,9 @@ void CameraInterface::update() {
   }
 
   std::string payload;
-  if (scanFrame(payload)) {
+  bool found = scanFrame(payload);
+  logStats();
+  if (found) {
     receivePart(payload);
   }
 }
@@ -154,11 +156,17 @@ bool CameraInterface::scanFrame(std::string& payload) {
 
   uint8_t* image = quirc_begin(qr, nullptr, nullptr);
   memcpy(image, fb->buf, fb->width * fb->height);
+  #ifdef CAMERA_PREVIEW
+  drawCameraPreview(fb->buf, fb->width, fb->height, statusChanged ? status : nullptr);
+  statusChanged = false;
+  #endif
   esp_camera_fb_return(fb);
   quirc_end(qr);
 
   bool found = false;
   int count = quirc_count(qr);
+  stats.frames++;
+  stats.codes += count;
   for (int i = 0; i < count && !found; i++) {
     quirc_extract(qr, i, qrCode);
 
@@ -168,7 +176,11 @@ bool CameraInterface::scanFrame(std::string& payload) {
       quirc_flip(qrCode);
       err = quirc_decode(qrCode, qrData);
     }
-    if (err != QUIRC_SUCCESS) continue;
+    if (err != QUIRC_SUCCESS) {
+      stats.errors++;
+      log_v("QR decoding failed: %s", quirc_strerror(err));
+      continue;
+    }
 
     payload.assign(reinterpret_cast<const char*>(qrData->payload), qrData->payload_len);
     found = true;
@@ -192,7 +204,7 @@ void CameraInterface::receivePart(const std::string& payload) {
       lastProgress = progress;
       char text[24];
       snprintf(text, sizeof(text), DISPLAY_SCAN_PROGRESS, progress);
-      displayMessage(text);
+      setStatus(text);
     }
     return;
   }
@@ -239,7 +251,27 @@ void CameraInterface::resetDecoder() {
   lastProgress = -1;
 }
 
-void CameraInterface::showIdle() { displayMessage(DISPLAY_SCAN_QR); }
+void CameraInterface::showIdle() { setStatus(DISPLAY_SCAN_QR); }
+
+void CameraInterface::setStatus(const char* text) {
+  #ifdef CAMERA_PREVIEW
+  // drawn below the next preview frame
+  strncpy(status, text, sizeof(status) - 1);
+  status[sizeof(status) - 1] = '\0';
+  statusChanged = true;
+  #else
+  displayMessage(text);
+  #endif
+}
+
+void CameraInterface::logStats() {
+  uint64_t now = millis();
+  if (now - stats.since < 1000) return;
+  if (stats.frames > 0) {
+    log_d("Camera: %u frames, %u QR codes found, %u not decodable", stats.frames, stats.codes, stats.errors);
+  }
+  stats = {0, 0, 0, now};
+}
 
 void CameraInterface::disconnect() {}
 
