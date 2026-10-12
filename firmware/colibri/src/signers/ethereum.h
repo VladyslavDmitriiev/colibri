@@ -14,6 +14,7 @@ int ethSignMessage(
 );
 std::string ethSignTypedDataHash(HDNode* node, std::string& domainSeparatorHash, std::string& messageHash);
 WalletResponse ethSignTransaction(HDNode* node, EthTxData& tx, uint8_t signature[RECOVERABLE_SIGNATURE_LENGTH] = {0});
+std::string ethFormatTransaction(const EthTxData& tx);
 int ethSignRecoverableDigest(
     HDNode* node, uint8_t digest[HASH_LENGTH], uint8_t signature[RECOVERABLE_SIGNATURE_LENGTH]
 );

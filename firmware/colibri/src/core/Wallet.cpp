@@ -538,7 +538,8 @@ WalletResponse Wallet::signDigest(std::string& hexDigest) {
 
 WalletResponse Wallet::signEthTransaction(EthTxData& tx) {
   if (isLocked()) return WalletResponse(Unauthorized, RPC_ERROR_LOCKED);
-  if (!waitForApproval(DISPLAY_APPROVE_SIGN_TX)) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
+  std::string review = std::string(DISPLAY_APPROVE_SIGN_TX) + "\n\n" + ethFormatTransaction(tx);
+  if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
   uint8_t sig[RECOVERABLE_SIGNATURE_LENGTH];
 
   return ethSignTransaction(&hdNode, tx, sig);
@@ -653,7 +654,8 @@ WalletResponse Wallet::urSign(UR& ur) {
           }
 
           // display transaction details for user approval
-          if (!waitForApproval(DISPLAY_APPROVE_SIGN_TX)) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
+          std::string review = std::string(DISPLAY_APPROVE_SIGN_TX) + "\n\n" + ethFormatTransaction(tx);
+          if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
           // signature with v as wallets expect it to build the signed tx (EIP-4527 / Keystone):
           // y-parity for typed txs, EIP-155 `chainId * 2 + 35 + recid` (big-endian) for legacy txs

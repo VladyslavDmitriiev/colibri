@@ -334,3 +334,137 @@ WalletResponse ethSignTransaction(HDNode* node, EthTxData& tx, uint8_t signature
 
   return createWalletResponse(signature);
 }
+
+// ===== Transaction review ===== //
+
+extern "C" {
+#include <address.h>
+}
+
+struct EthChainInfo {
+  uint64_t chainId;
+  const char* name;
+  const char* symbol;
+};
+
+static const EthChainInfo ethChains[] = {
+    {1, "Ethereum", "ETH"},
+    {10, "Optimism", "ETH"},
+    {56, "BNB Chain", "BNB"},
+    {97, "BNB Testnet", "tBNB"},
+    {137, "Polygon", "POL"},
+    {8453, "Base", "ETH"},
+    {17000, "Holesky", "ETH"},
+    {42161, "Arbitrum", "ETH"},
+    {11155111, "Sepolia", "ETH"},
+};
+
+static const EthChainInfo* ethFindChain(uint64_t chainId) {
+  for (const EthChainInfo& c : ethChains) {
+    if (c.chainId == chainId) return &c;
+  }
+  return nullptr;
+}
+
+// big-endian integer of up to 32 bytes, right-aligned into 32 bytes
+static void ethReadUint256(const uint8_t* be, size_t len, uint8_t out[32]) {
+  if (len > 32) len = 32;
+  memset(out, 0, 32);
+  memcpy(out + 32 - len, be, len);
+}
+
+// out = a * b, false if the product does not fit 256 bits
+static bool ethMulUint256(const uint8_t a[32], const uint8_t b[32], uint8_t out[32]) {
+  uint32_t acc[64] = {0};
+  for (int i = 31; i >= 0; i--) {
+    for (int j = 31; j >= 0; j--) {
+      acc[i + j + 1] += (uint32_t)a[i] * b[j];
+    }
+  }
+  for (int k = 63; k > 0; k--) {
+    acc[k - 1] += acc[k] >> 8;
+    acc[k] &= 0xff;
+  }
+  for (int k = 0; k < 32; k++) {
+    if (acc[k]) return false;
+  }
+  for (int k = 0; k < 32; k++) out[k] = acc[32 + k];
+  return true;
+}
+
+static std::string ethFormatUint256(const uint8_t value[32], unsigned int decimals, const char* suffix) {
+  bignum256 bn;
+  bn_read_be(value, &bn);
+  char out[100];
+  if (!bn_format(&bn, NULL, suffix, decimals, 0, false, 0, out, sizeof(out))) return "?";
+  return out;
+}
+
+static std::string ethFormatAddress(const uint8_t* address) {
+  char out[2 + 2 * ADDRESS_LENGTH + 1];  // EIP-55, 0x prefixed
+  ethereum_address_checksum(address, out, false, 0);
+  return out;
+}
+
+// ABI-encoded address argument, false if the upper 12 bytes are not zero
+static bool ethReadAbiAddress(const uint8_t* word, uint8_t address[ADDRESS_LENGTH]) {
+  if (!isAllZero(word, 32 - ADDRESS_LENGTH)) return false;
+  memcpy(address, word + 32 - ADDRESS_LENGTH, ADDRESS_LENGTH);
+  return true;
+}
+
+// Multi-line summary of a transaction for the user to review before signing.
+// ERC-20 `transfer` and `approve` calls show the recipient / spender and the raw token amount.
+std::string ethFormatTransaction(const EthTxData& tx) {
+  const EthChainInfo* chain = ethFindChain(tx.chainId);
+  std::string symbol = chain ? std::string(" ") + chain->symbol : " (native)";
+  uint8_t num[32];
+  std::string text;
+
+  text += "Chain: ";
+  if (chain) text += std::string(chain->name) + " ";
+  text += "(" + std::to_string(tx.chainId) + ")\n";
+
+  static const uint8_t SELECTOR_TRANSFER[4] = {0xa9, 0x05, 0x9c, 0xbb};
+  static const uint8_t SELECTOR_APPROVE[4] = {0x09, 0x5e, 0xa7, 0xb3};
+  uint8_t arg[ADDRESS_LENGTH];
+  bool isTokenCall = tx.dataSize == 4 + 2 * 32 && isAllZero(tx.value, tx.valueSize) &&
+                     (memcmp(tx.data, SELECTOR_TRANSFER, 4) == 0 || memcmp(tx.data, SELECTOR_APPROVE, 4) == 0) &&
+                     ethReadAbiAddress(tx.data + 4, arg);
+
+  if (isTokenCall) {
+    bool isApprove = memcmp(tx.data, SELECTOR_APPROVE, 4) == 0;
+    const uint8_t* amount = tx.data + 4 + 32;
+    text += "Token: " + ethFormatAddress(tx.to) + "\n";
+    text += std::string(isApprove ? "APPROVE spender: " : "Transfer to: ") + ethFormatAddress(arg) + "\n";
+    uint8_t max[32];
+    memset(max, 0xff, sizeof(max));
+    if (isApprove && memcmp(amount, max, 32) == 0) {
+      text += "Amount: UNLIMITED\n";
+    } else {
+      text += "Amount: " + ethFormatUint256(amount, 0, " (raw)") + "\n";
+    }
+  } else {
+    text += "To: " + ethFormatAddress(tx.to) + "\n";
+    ethReadUint256(tx.value, tx.valueSize, num);
+    text += "Value: " + ethFormatUint256(num, 18, symbol.c_str()) + "\n";
+  }
+
+  // worst case fee: gas limit * max fee per gas (gas price for legacy txs)
+  uint8_t gasLimit[32], gasPrice[32];
+  ethReadUint256(tx.gasLimit, tx.gasLimitSize, gasLimit);
+  ethReadUint256(tx.maxGasFee, tx.maxGasFeeSize, gasPrice);
+  text += "Max fee: ";
+  text += ethMulUint256(gasLimit, gasPrice, num) ? ethFormatUint256(num, 18, symbol.c_str()) : "OVERFLOW";
+  text += "\n";
+
+  ethReadUint256(tx.nonce, tx.nonceSize, num);
+  text += "Nonce: " + ethFormatUint256(num, 0, NULL);
+
+  if (!isTokenCall && tx.dataSize > 0) {
+    text += "\nData: " + std::to_string(tx.dataSize) + " bytes";
+    if (tx.dataSize >= 4) text += " " + toHex(tx.data, 4, true);
+  }
+
+  return text;
+}
