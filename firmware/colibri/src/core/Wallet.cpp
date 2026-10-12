@@ -370,6 +370,7 @@ void Wallet::deleteHdNode() {
   xPubAccount.clear();
 
   memzero(&pubkeyAccount, sizeof(pubkeyAccount));
+  memzero(&chainCodeAccount, sizeof(chainCodeAccount));
   memzero(&fingerprints, sizeof(fingerprints));
   memzero(&bipPurpose, sizeof(bipPurpose));
   memzero(&slip44, sizeof(slip44));
@@ -464,6 +465,7 @@ bool Wallet::setHdPath(const char* inPath) {
       log_d("deriving account xpub...");
       xPubAccount = getXPub(&hdNode, inPath);
       memcpy(pubkeyAccount, hdNode.public_key, PUBLICKEY_LENGTH);
+      memcpy(chainCodeAccount, hdNode.chain_code, CHAINCODE_LENGTH);
     }
 
     // save current fingerprint
@@ -596,9 +598,9 @@ WalletResponse Wallet::urRequestPair() {
   std::string urTxt;
 
   if (chainType == ETH) {
-    urTxt = getUrHdKey(&hdNode, pubkeyAccount, hdPath, fingerprints);
+    urTxt = getUrHdKey(pubkeyAccount, chainCodeAccount, hdPath, fingerprints);
   } else if (chainType == BTC) {
-    // ur = getUrAccount(&hdNode, pubkeyAccount, hdPath, fingerprints);
+    // ur = getUrAccount(pubkeyAccount, chainCodeAccount, hdPath, fingerprints);
     return WalletResponse(NotImplemented, RPC_ERROR_NOT_IMPLEMENTED);
   } else {
     return WalletResponse(NotImplemented, RPC_ERROR_NOT_IMPLEMENTED);

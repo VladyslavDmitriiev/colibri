@@ -35,6 +35,7 @@ class Wallet {
   uint64_t timeLastActivity;
   uint8_t hdPathDepth;
   uint8_t pubkeyAccount[PUBLICKEY_LENGTH];
+  uint8_t chainCodeAccount[CHAINCODE_LENGTH];
 
   bool isLocked();
   bool isPasswordSet();

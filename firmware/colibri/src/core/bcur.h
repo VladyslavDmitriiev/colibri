@@ -29,11 +29,13 @@ extern "C" {
 using namespace ur;
 
 std::string getUrHdKey(
-    HDNode* node, const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], std::string& hdPath, const uint32_t fingerprints[7]
+    const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], const uint8_t chainCodeAccount[CHAINCODE_LENGTH],
+    std::string& hdPath, const uint32_t fingerprints[7]
 );
 
 std::string getUrAccount(
-    HDNode* node, const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], std::string& hdPath, const uint32_t fingerprints[7]
+    const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], const uint8_t chainCodeAccount[CHAINCODE_LENGTH],
+    std::string& hdPath, const uint32_t fingerprints[7]
 );
 
 std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16] = {0});

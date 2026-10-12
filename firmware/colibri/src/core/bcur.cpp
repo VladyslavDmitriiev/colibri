@@ -15,8 +15,9 @@
 #define BCUR_MAX_FRAGMENT_SIZE(capacity, typeLen) ((capacity - typeLen - 12 - 42) / 2)
 
 static void encodeHdKey(
-    CborEncoder* encoder, HDNode* node, const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], std::string& hdPath,
-    uint8_t hdPathDepth, const uint32_t fingerprints[7]
+    CborEncoder* encoder, const uint8_t pubkeyAccount[PUBLICKEY_LENGTH],
+    const uint8_t chainCodeAccount[CHAINCODE_LENGTH], std::string& hdPath, uint8_t hdPathDepth,
+    const uint32_t fingerprints[7]
 ) {
   // init key map
   CborEncoder key_map_encoder;
@@ -29,7 +30,7 @@ static void encodeHdKey(
 
   // chaincode
   e = cbor_encode_uint(&key_map_encoder, 4);
-  e = cbor_encode_byte_string(&key_map_encoder, node->chain_code, sizeof(node->chain_code));
+  e = cbor_encode_byte_string(&key_map_encoder, chainCodeAccount, CHAINCODE_LENGTH);
 
   // key path
   e = cbor_encode_uint(&key_map_encoder, 6);
@@ -60,7 +61,7 @@ static void encodeHdKey(
 
     // - add account fingerprint
     e = cbor_encode_uint(&key_path_map_encoder, 2);
-    e = cbor_encode_uint(&key_path_map_encoder, fingerprints[hdPathDepth]);
+    e = cbor_encode_uint(&key_path_map_encoder, fingerprints[0]);  // source = master key
 
     // - add depth - BTC only
     e = cbor_encode_uint(&key_path_map_encoder, 3);
@@ -109,31 +110,31 @@ static std::string encodeUr(UR& ur, size_t maxFragmentLen = 384) {
 
   toUpperCase(result);
 
-
   return result;
 }
 
 std::string getUrHdKey(
-    HDNode* node, const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], std::string& hdPath, const uint32_t fingerprints[7]
+    const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], const uint8_t chainCodeAccount[CHAINCODE_LENGTH],
+    std::string& hdPath, const uint32_t fingerprints[7]
 ) {
   uint8_t cbor[128];
   CborEncoder encoder;
   cbor_encoder_init(&encoder, cbor, sizeof(cbor), 0);
 
-  encodeHdKey(&encoder, node, pubkeyAccount, hdPath, 3, fingerprints);
+  encodeHdKey(&encoder, pubkeyAccount, chainCodeAccount, hdPath, 3, fingerprints);
 
   // create UR object
   size_t cborLen = cbor_encoder_get_buffer_size(&encoder, cbor);
   log_d("CBOR data length: %d", cborLen);
   UR ur(std::string(UR_TYPE_HDKEY), ByteVector(cbor, cbor + cborLen));
 
-
   return encodeUr(ur);
 }
 
 // TODO: BTC
 std::string getUrAccount(
-    HDNode* node, const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], std::string& hdPath, const uint32_t fingerprints[7]
+    const uint8_t pubkeyAccount[PUBLICKEY_LENGTH], const uint8_t chainCodeAccount[CHAINCODE_LENGTH],
+    std::string& hdPath, const uint32_t fingerprints[7]
 ) {
   uint8_t cbor[128];
   CborEncoder encoder;
@@ -148,7 +149,7 @@ std::string getUrAccount(
 
     // fingerprint - immediate parent, or root parent of the path given ?
     e = cbor_encode_uint(&root_map_encoder, 1);
-    e = cbor_encode_uint(&root_map_encoder, fingerprints[hdPathDepth - 1]);
+    e = cbor_encode_uint(&root_map_encoder, fingerprints[0]);  // master key
 
     e = cbor_encode_uint(&root_map_encoder, 2);
     {
@@ -161,7 +162,7 @@ std::string getUrAccount(
 
       // Single hdkey
       cbor_encode_tag(&key_array_encoder, 303);
-      encodeHdKey(&encoder, node, pubkeyAccount, hdPath, hdPathDepth, fingerprints);
+      encodeHdKey(&encoder, pubkeyAccount, chainCodeAccount, hdPath, hdPathDepth, fingerprints);
 
       // Close the array
       e = cbor_encoder_close_container(&root_map_encoder, &key_array_encoder);
@@ -177,7 +178,6 @@ std::string getUrAccount(
   size_t cborLen = cbor_encoder_get_buffer_size(&encoder, cbor);
   log_d("CBOR data length: %d", cborLen);
   UR ur(std::string(UR_TYPE_ACCOUNT), ByteVector(cbor, cbor + cborLen));
-
 
   return encodeUr(ur);
 }
@@ -211,7 +211,6 @@ std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16]) 
   // get UR object
   size_t cborLen = cbor_encoder_get_buffer_size(&encoder, cbor);
   UR ur(std::string(UR_TYPE_ETH_SIGNATURE), ByteVector(cbor, cbor + cborLen));
-
 
   return encodeUr(ur);
 }
