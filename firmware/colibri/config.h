@@ -395,6 +395,34 @@
       !defined(CAMERA_GPIO_VSYNC) || !defined(CAMERA_GPIO_HREF) || !defined(CAMERA_GPIO_PCLK)
     #error "Incomplete camera pin configuration for selected board!"
   #endif
+
+  #ifndef CAMERA_SCCB_I2C_PORT
+    #define CAMERA_SCCB_I2C_PORT 0  // only used if SIOD/SIOC are -1 (shared I2C bus)
+  #endif
+  #ifndef CAMERA_XCLK_FREQ
+    #define CAMERA_XCLK_FREQ 20000000
+  #endif
+  #ifndef CAMERA_FRAME_SIZE
+    #define CAMERA_FRAME_SIZE FRAMESIZE_VGA
+  #endif
+  #ifndef CAMERA_VFLIP
+    #define CAMERA_VFLIP 0
+  #endif
+  #ifndef CAMERA_HMIRROR
+    #define CAMERA_HMIRROR 0
+  #endif
+  #ifndef CAMERA_SCAN_INTERVAL
+    #define CAMERA_SCAN_INTERVAL 50  // ms between frames
+  #endif
+  #ifndef CAMERA_SCAN_TIMEOUT
+    #define CAMERA_SCAN_TIMEOUT 5000  // ms without a new part before a multi-part scan is dropped
+  #endif
+  #ifndef CAMERA_KEY_CHECK_INTERVAL
+    #define CAMERA_KEY_CHECK_INTERVAL 1000  // ms between checks for a key while there is none
+  #endif
+  #ifndef CAMERA_PAIR_CLICKS
+    #define CAMERA_PAIR_CLICKS 3  // OK presses to show the pairing QR (two-button layouts)
+  #endif
 #endif
 
 // ========== Crypto ========== //

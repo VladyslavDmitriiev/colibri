@@ -5,71 +5,259 @@
 
 #if defined(CAMERA_ENABLED)
 
-static camera_config_t camera_config = {
-    .pin_pwdn = CAMERA_GPIO_PWDN,
-    .pin_reset = CAMERA_GPIO_RESET,
-    .pin_xclk = CAMERA_GPIO_XCLK,
-    .pin_sccb_sda = CAMERA_GPIO_SIOD,
-    .pin_sccb_scl = CAMERA_GPIO_SIOC,
-    .pin_d7 = CAMERA_GPIO_D7,
-    .pin_d6 = CAMERA_GPIO_D6,
-    .pin_d5 = CAMERA_GPIO_D5,
-    .pin_d4 = CAMERA_GPIO_D4,
-    .pin_d3 = CAMERA_GPIO_D3,
-    .pin_d2 = CAMERA_GPIO_D2,
-    .pin_d1 = CAMERA_GPIO_D1,
-    .pin_d0 = CAMERA_GPIO_D0,
-    .pin_vsync = CAMERA_GPIO_VSYNC,
-    .pin_href = CAMERA_GPIO_HREF,
-    .pin_pclk = CAMERA_GPIO_PCLK,
+esp_err_t camera_init() {
+  // zero-initialise: the driver reads fields we don't set explicitly
+  camera_config_t config = {};
 
-    .xclk_freq_hz = 20000000,
-    .ledc_timer = LEDC_TIMER_0,
-    .ledc_channel = LEDC_CHANNEL_0,
-    .pixel_format = PIXFORMAT_JPEG,
-    .frame_size = FRAMESIZE_SVGA,
-    .jpeg_quality = 10,
-    .fb_count = 2,
-    .grab_mode = CAMERA_GRAB_WHEN_EMPTY
-};
+  config.pin_pwdn = CAMERA_GPIO_PWDN;
+  config.pin_reset = CAMERA_GPIO_RESET;
+  config.pin_xclk = CAMERA_GPIO_XCLK;
+  config.pin_sccb_sda = CAMERA_GPIO_SIOD;
+  config.pin_sccb_scl = CAMERA_GPIO_SIOC;
+  // SIOD/SIOC set to -1: share an I2C bus that's already initialised (e.g. with touch/PMIC)
+  config.sccb_i2c_port = CAMERA_SCCB_I2C_PORT;
+  config.pin_d7 = CAMERA_GPIO_D7;
+  config.pin_d6 = CAMERA_GPIO_D6;
+  config.pin_d5 = CAMERA_GPIO_D5;
+  config.pin_d4 = CAMERA_GPIO_D4;
+  config.pin_d3 = CAMERA_GPIO_D3;
+  config.pin_d2 = CAMERA_GPIO_D2;
+  config.pin_d1 = CAMERA_GPIO_D1;
+  config.pin_d0 = CAMERA_GPIO_D0;
+  config.pin_vsync = CAMERA_GPIO_VSYNC;
+  config.pin_href = CAMERA_GPIO_HREF;
+  config.pin_pclk = CAMERA_GPIO_PCLK;
 
-esp_err_t camera_init() { return esp_camera_init(&camera_config); }
+  config.xclk_freq_hz = CAMERA_XCLK_FREQ;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  // grayscale frames can be fed to quirc directly, no conversion needed
+  config.pixel_format = PIXFORMAT_GRAYSCALE;
+  config.frame_size = CAMERA_FRAME_SIZE;
+  config.fb_count = 2;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.grab_mode = CAMERA_GRAB_LATEST;
 
-esp_err_t camera_capture() {
-  // capture a frame
-  camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) {
-    log_e("Frame buffer could not be acquired");
-    return ESP_FAIL;
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) return err;
+
+  sensor_t* sensor = esp_camera_sensor_get();
+  if (sensor) {
+    sensor->set_vflip(sensor, CAMERA_VFLIP);
+    sensor->set_hmirror(sensor, CAMERA_HMIRROR);
   }
-
-  // replace this with your own function
-  // display_image(fb->width, fb->height, fb->format, fb->buf, fb->len);
-
-  // return the frame buffer back to be reused
-  esp_camera_fb_return(fb);
 
   return ESP_OK;
 }
 
 void CameraInterface::init() {
   log_i("Initializing camera interface...");
+
+  if (!psramFound()) {
+    log_e("Camera interface requires PSRAM");
+    return;
+  }
+
   esp_err_t err = camera_init();
   if (err != ESP_OK) {
     log_e("Camera initialization failed with error 0x%x", err);
     return;
   }
 
+  qr = quirc_new();
+  qrCode = (struct quirc_code*)ps_malloc(sizeof(struct quirc_code));
+  qrData = (struct quirc_data*)ps_malloc(sizeof(struct quirc_data));
+  if (!qr || !qrCode || !qrData) {
+    log_e("QR decoder could not be allocated");
+    if (qr) quirc_destroy(qr);
+    free(qrCode);
+    free(qrData);
+    esp_camera_deinit();
+    return;
+  }
+
+  resetDecoder();
+  initialised = true;
   log_d("Camera initialized successfully");
 }
 
-void CameraInterface::update() {}
+void CameraInterface::update() {
+  if (!initialised || isHot) return;
+
+  // scanning only makes sense once the wallet can sign
+  if (wallet.isLocked()) {
+    isReady = false;
+    return;
+  }
+  if (!isReady) {
+    // key check reads storage, don't do it every loop
+    uint64_t now = millis();
+    if (now - timeLastKeyCheck < CAMERA_KEY_CHECK_INTERVAL) return;
+    timeLastKeyCheck = now;
+    if (!wallet.isKeySet()) return;
+
+    isReady = true;
+    showIdle();
+  }
+
+  // result QR stays on screen until dismissed, so we don't rescan the same request
+  if (isShowingResult) {
+    if (buttonOk.isShortPressed()) {
+      isShowingResult = false;
+      showIdle();
+    }
+    return;
+  }
+
+  #ifdef BUTTON_LAYOUT_MAIN_TWO
+  // show pairing QR (`ur:crypto-hdkey`) to connect a software wallet
+  if (buttonOk.isMultiPressed(CAMERA_PAIR_CLICKS)) {
+    WalletResponse r = wallet.urRequestPair();
+    if (r.status >= Ok) isShowingResult = true;
+    return;
+  }
+  #endif
+
+  uint64_t now = millis();
+  if (now - timeLastScan < CAMERA_SCAN_INTERVAL) return;
+  timeLastScan = now;
+
+  // drop incomplete multi-part scans after a while
+  if (timeLastPart > 0 && now - timeLastPart > CAMERA_SCAN_TIMEOUT) {
+    log_d("Multi-part scan timed out");
+    resetDecoder();
+    showIdle();
+  }
+
+  std::string payload;
+  if (scanFrame(payload)) {
+    receivePart(payload);
+  }
+}
+
+bool CameraInterface::scanFrame(std::string& payload) {
+  camera_fb_t* fb = esp_camera_fb_get();
+  if (!fb) {
+    log_e("Frame buffer could not be acquired");
+    return false;
+  }
+
+  int w, h;
+  quirc_begin(qr, &w, &h);
+  if (w != fb->width || h != fb->height) {
+    if (quirc_resize(qr, fb->width, fb->height) < 0) {
+      log_e("QR decoder could not be resized");
+      esp_camera_fb_return(fb);
+      return false;
+    }
+  }
+
+  uint8_t* image = quirc_begin(qr, nullptr, nullptr);
+  memcpy(image, fb->buf, fb->width * fb->height);
+  esp_camera_fb_return(fb);
+  quirc_end(qr);
+
+  bool found = false;
+  int count = quirc_count(qr);
+  for (int i = 0; i < count && !found; i++) {
+    quirc_extract(qr, i, qrCode);
+
+    quirc_decode_error_t err = quirc_decode(qrCode, qrData);
+    if (err == QUIRC_ERROR_DATA_ECC) {
+      // retry mirrored, some cameras flip the image
+      quirc_flip(qrCode);
+      err = quirc_decode(qrCode, qrData);
+    }
+    if (err != QUIRC_SUCCESS) continue;
+
+    payload.assign(reinterpret_cast<const char*>(qrData->payload), qrData->payload_len);
+    found = true;
+  }
+
+  return found;
+}
+
+void CameraInterface::receivePart(const std::string& payload) {
+  if (payload.size() < sizeof(UR_PREFIX) || strncasecmp(payload.c_str(), UR_PREFIX, sizeof(UR_PREFIX) - 1) != 0) {
+    log_d("Ignoring non-UR QR code");
+    return;
+  }
+
+  if (!decoder->receive_part(payload)) return;
+  timeLastPart = millis();
+
+  if (!decoder->is_complete()) {
+    int progress = (int)(decoder->estimated_percent_complete() * 100);
+    if (progress != lastProgress) {
+      lastProgress = progress;
+      char text[24];
+      snprintf(text, sizeof(text), DISPLAY_SCAN_PROGRESS, progress);
+      displayMessage(text);
+    }
+    return;
+  }
+
+  if (!decoder->is_success()) {
+    log_e("UR decoding failed");
+    resetDecoder();
+    displayMessage(DISPLAY_ERROR);
+    return;
+  }
+
+  UR ur = decoder->result_ur();
+  resetDecoder();
+  handleUr(ur);
+}
+
+void CameraInterface::handleUr(UR& ur) {
+  setStateBusy(true);
+  WalletResponse r = wallet.urSign(ur);
+  setStateBusy(false);
+
+  if (r.status < Ok) {
+    log_e("UR signing failed: %s", r.error);
+    displayMessage(r.status == UserRejected ? DISPLAY_REJECTED : DISPLAY_ERROR);
+    delay(1000);
+    showIdle();
+    return;
+  }
+
+  log_d("Signature UR: %s", r.result.c_str());
+  if (displayQrCode(r.result.c_str())) {
+    isShowingResult = true;
+    buttonOk.reset();
+  } else {
+    log_e("Signature QR code could not be displayed");
+    displayMessage(DISPLAY_ERROR);
+  }
+}
+
+void CameraInterface::resetDecoder() {
+  delete decoder;
+  decoder = new ur::URDecoder();
+  timeLastPart = 0;
+  lastProgress = -1;
+}
+
+void CameraInterface::showIdle() { displayMessage(DISPLAY_SCAN_QR); }
 
 void CameraInterface::disconnect() {}
 
 void CameraInterface::stop() {
   disconnect();
+  if (!initialised) return;
+
   esp_camera_deinit();
+  quirc_destroy(qr);
+  qr = nullptr;
+  free(qrCode);
+  qrCode = nullptr;
+  free(qrData);
+  qrData = nullptr;
+  delete decoder;
+  decoder = nullptr;
+  isShowingResult = false;
+  initialised = false;
 }
 
 void CameraInterface::wipe() { stop(); }

@@ -45,6 +45,11 @@ AsyncLed led = AsyncLed(LED_GPIO);
   #endif
 #endif
 
+#ifdef CAMERA_ENABLED
+// quirc decodes on the loop task and needs ~13 KB of stack by itself
+SET_LOOP_TASK_STACK_SIZE(24 * 1024);
+#endif
+
 // state tracking
 bool isHot = false;
 bool isBusy = false;

@@ -128,6 +128,8 @@ const char DISPLAY_DEBUG[] = "DEBUG MODE";
 const char DISPLAY_CONNECTED[] = "Connected";
 const char DISPLAY_NOT_CONNECTED[] = "Not Connected";
 const char DISPLAY_LOCKED[] = "Locked";
+const char DISPLAY_SCAN_QR[] = "Scan QR";
+const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 
 // ===== Storage ===== //
 const char STORAGE_NVS_PARTITION_NAME[] = NVS_PARTITION_NAME;
