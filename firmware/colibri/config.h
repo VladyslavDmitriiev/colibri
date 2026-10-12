@@ -420,6 +420,9 @@
   #ifndef CAMERA_SCAN_TIMEOUT
     #define CAMERA_SCAN_TIMEOUT 5000  // ms without a new part before a multi-part scan is dropped
   #endif
+  #ifndef CAMERA_RESULT_TIMEOUT
+    #define CAMERA_RESULT_TIMEOUT 120000  // ms a signature or pairing QR code stays on screen
+  #endif
   // live camera image on screen to aim at QR codes
   #if defined(DISPLAY_ENABLED) && !defined(DISPLAY_SMALL) && !defined(CAMERA_PREVIEW_DISABLED)
     #define CAMERA_PREVIEW

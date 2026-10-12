@@ -48,6 +48,7 @@ class CameraInterface : public Interface {
   uint64_t timeLastPart;
   int lastProgress;
   bool isShowingResult;
+  uint64_t timeResultShown;
   uint64_t timeLastKeyCheck;
   bool isReady;
   char status[24] = {0};

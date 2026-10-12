@@ -102,7 +102,7 @@ void CameraInterface::update() {
 
   // result QR stays on screen until dismissed, so we don't rescan the same request
   if (isShowingResult) {
-    if (buttonOk.isShortPressed()) {
+    if (buttonOk.isShortPressed() || millis() - timeResultShown > CAMERA_RESULT_TIMEOUT) {
       isShowingResult = false;
       showIdle();
     }
@@ -113,7 +113,10 @@ void CameraInterface::update() {
   // show pairing QR (`ur:crypto-hdkey`) to connect a software wallet
   if (buttonOk.isMultiPressed(CAMERA_PAIR_CLICKS)) {
     WalletResponse r = wallet.urRequestPair();
-    if (r.status >= Ok) isShowingResult = true;
+    if (r.status >= Ok) {
+      isShowingResult = true;
+      timeResultShown = millis();
+    }
     return;
   }
   #endif
@@ -237,6 +240,7 @@ void CameraInterface::handleUr(UR& ur) {
   log_d("Signature UR: %s", r.result.c_str());
   if (displayQrCode(r.result.c_str())) {
     isShowingResult = true;
+    timeResultShown = millis();
     buttonOk.reset();
   } else {
     log_e("Signature QR code could not be displayed");
