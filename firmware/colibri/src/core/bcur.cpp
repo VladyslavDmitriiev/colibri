@@ -198,6 +198,7 @@ std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16]) 
 
   // uuid
   e = cbor_encode_uint(&key_map_encoder, 1);
+  e = cbor_encode_tag(&key_map_encoder, 37);  // EIP-4527: request-id is a tagged uuid
   e = cbor_encode_byte_string(&key_map_encoder, uuid, 16);
 
   // signature
