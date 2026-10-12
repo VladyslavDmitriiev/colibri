@@ -468,7 +468,8 @@ static const uint8_t SELECTOR_SET_APPROVAL_FOR_ALL[4] = {0xa2, 0x2c, 0xb4, 0x65}
 
 // Plain language summary of a transaction for the user to review before signing, with
 // warnings for common scams and mistakes. Lines are styled with DISPLAY_LINE_* prefixes.
-std::string ethFormatTransaction(const EthTxData& tx) {
+// `isBlind` is set when the device can't tell what the transaction does.
+std::string ethFormatTransaction(const EthTxData& tx, bool* isBlind) {
   const EthChainInfo* chain = ethFindChain(tx.chainId);
   std::string nativeSymbol = chain ? std::string(" ") + chain->symbol : " coins";
   uint8_t zeroAddress[ADDRESS_LENGTH] = {0};
@@ -485,6 +486,7 @@ std::string ethFormatTransaction(const EthTxData& tx) {
 
   std::string text;
   std::string alerts;
+  if (isBlind) *isBlind = false;
 
   if (!isCall) {
     text += DISPLAY_LINE_TITLE "SEND\n";
@@ -536,6 +538,7 @@ std::string ethFormatTransaction(const EthTxData& tx) {
     }
     text += "Collection:\n" + ethFormatAddress(tx.to) + "\n";
   } else {
+    if (isBlind) *isBlind = true;
     text += DISPLAY_LINE_WARNING "CONTRACT INTERACTION\n";
     text += DISPLAY_LINE_NOTE "This device can't read what it does. Sign only if you trust the app.\n";
     if (hasValue) text += DISPLAY_LINE_BIG "Pays " + ethFormatUint256(value, 18, nativeSymbol.c_str()) + "\n";

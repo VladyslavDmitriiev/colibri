@@ -107,6 +107,7 @@ const char RPC_ERROR_INVALID_UR[] = "Invalid UR";
 const char RPC_ERROR_INVALID_UR_TYPE[] = "Unsupported UR type";
 const char RPC_ERROR_INVALID_UR_DATA[] = "Invalid UR data type";
 const char RPC_ERROR_DECODING[] = "Error decoding data";
+const char RPC_ERROR_BLIND_SIGNING[] = "Blind signing is turned off";
 
 // ===== Display ===== //
 const char DISPLAY_SPLASH[] = "COLIBRI";
@@ -133,9 +134,11 @@ const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 #ifdef BUTTON_LAYOUT_MAIN_TWO
   #define DISPLAY_HINT_APPROVE "Approve: press OK"
   #define DISPLAY_HINT_REJECT "Reject: press Cancel"
+  #define DISPLAY_HINT_CLOSE "Close: press OK"
 #else
   #define DISPLAY_HINT_APPROVE "Approve: press button twice"
   #define DISPLAY_HINT_REJECT "Reject: hold button"
+  #define DISPLAY_HINT_CLOSE "Close: press button"
 #endif
 // line styles for multi-line display text, set by the first char of a line
 #define DISPLAY_LINE_TITLE "\x01"
@@ -144,6 +147,11 @@ const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 #define DISPLAY_LINE_BIG "\x04"
 #define DISPLAY_LINE_NOTE "\x05"
 #define DISPLAY_LINE_ALERT "\x06"  // danger text
+const char DISPLAY_BLIND_SIGNING_OFF[] =
+    DISPLAY_LINE_DANGER "NOT SIGNED\n"
+    "This device can't show what this request does, so it refused to sign it.\n"
+    DISPLAY_LINE_NOTE "Signing what you can't read is how most wallets get drained.\n"
+    DISPLAY_LINE_NOTE "To allow it anyway, turn on BLIND_SIGNING_ENABLED in config_user.h.";
 
 // ===== Storage ===== //
 const char STORAGE_NVS_PARTITION_NAME[] = NVS_PARTITION_NAME;

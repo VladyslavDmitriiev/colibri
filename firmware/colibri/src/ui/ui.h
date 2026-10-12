@@ -30,6 +30,8 @@ void updateUi();
 
 bool waitForApproval(const char* text, RgbColor color = Hot);
 
+void waitForDismiss(const char* text);
+
 void setStateConnected(Connection conn);
 
 void setStateBusy(bool busy);

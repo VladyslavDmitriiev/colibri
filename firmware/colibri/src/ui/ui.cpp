@@ -172,6 +172,28 @@ bool waitForApproval(const char* text, RgbColor color) {
   return isApproved;
 }
 
+// show a notice until the user presses a button or the approval timeout runs out
+void waitForDismiss(const char* text) {
+#ifndef DISPLAY_SMALL
+  std::string notice = std::string(text) + "\n\n" DISPLAY_LINE_NOTE DISPLAY_HINT_CLOSE;
+  displayMessage(notice.c_str());
+#else
+  displayMessage(text);
+#endif
+  led_indicate(false);
+
+  buttonOk.reset();
+  buttonCancel.reset();
+  uint64_t startTime = millis();
+  while ((millis() - startTime) < TIMEOUT_WAIT_FOR_APPROVAL) {
+    updateUi();
+    if (buttonOk.isShortPressed() || buttonCancel.isShortPressed()) break;
+    delay(5);
+  }
+  buttonOk.reset();
+  buttonCancel.reset();
+}
+
 void setStateConnected(Connection conn) {
   log_d("Interface connected: %s (%d)", conn > 0 ? "true" : "false", conn);
   connection = conn;

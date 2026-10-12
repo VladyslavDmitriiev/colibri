@@ -512,8 +512,16 @@ std::string Wallet::getAddress() {
   return "";
 }
 
+// the device can't show what the request does: tell the user why nothing gets signed
+static WalletResponse rejectBlindSigning() {
+  log_w("Blind signing is turned off, request rejected");
+  waitForDismiss(DISPLAY_BLIND_SIGNING_OFF);
+  return WalletResponse(UserRejected, RPC_ERROR_BLIND_SIGNING);
+}
+
 WalletResponse Wallet::signDigest(std::string& hexDigest) {
   if (isLocked()) return WalletResponse(Unauthorized, RPC_ERROR_LOCKED);
+  if (!BLIND_SIGNING_ENABLED) return rejectBlindSigning();
   if (!waitForApproval(DISPLAY_APPROVE_SIGN_HASH)) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
   std::string signature;
@@ -538,7 +546,9 @@ WalletResponse Wallet::signDigest(std::string& hexDigest) {
 
 WalletResponse Wallet::signEthTransaction(EthTxData& tx) {
   if (isLocked()) return WalletResponse(Unauthorized, RPC_ERROR_LOCKED);
-  std::string review = ethFormatTransaction(tx);
+  bool isBlind;
+  std::string review = ethFormatTransaction(tx, &isBlind);
+  if (isBlind && !BLIND_SIGNING_ENABLED) return rejectBlindSigning();
   if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
   uint8_t sig[RECOVERABLE_SIGNATURE_LENGTH];
 
@@ -577,6 +587,7 @@ WalletResponse Wallet::signTypedDataHash(std::string& domainSeparatorHash, std::
   std::string signature;
 
   if (isLocked()) return WalletResponse(Unauthorized, RPC_ERROR_LOCKED);
+  if (!BLIND_SIGNING_ENABLED) return rejectBlindSigning();
   if (!waitForApproval(DISPLAY_APPROVE_SIGN_TYPED_DATA)) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
   if (chainType == ETH) {
@@ -654,7 +665,9 @@ WalletResponse Wallet::urSign(UR& ur) {
           }
 
           // display transaction details for user approval
-          std::string review = ethFormatTransaction(tx);
+          bool isBlind;
+          std::string review = ethFormatTransaction(tx, &isBlind);
+          if (isBlind && !BLIND_SIGNING_ENABLED) return rejectBlindSigning();
           if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
           // signature with v as wallets expect it to build the signed tx (EIP-4527 / Keystone):
@@ -687,6 +700,8 @@ WalletResponse Wallet::urSign(UR& ur) {
           }
 
           // display details for user approval
+          // TODO: show typed data in plain language, until then it's blind signing
+          if (!BLIND_SIGNING_ENABLED) return rejectBlindSigning();
           if (!waitForApproval(DISPLAY_APPROVE_SIGN_TYPED_DATA))
             return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 

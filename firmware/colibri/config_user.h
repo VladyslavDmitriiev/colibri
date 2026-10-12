@@ -36,6 +36,10 @@
 // - change timeout for auto-locking the device after inactivity (in ms)
 // #define TIMEOUT_INACTIVITY_LOCK (5 * 60 * 1000)  // == 5min; minimum value: 20000 (20sec)
 
+// - allow signing what the device can't show in plain language: unknown contract calls, raw
+// hashes and typed data. off by default, a common way to trick users into signing a theft
+// #define BLIND_SIGNING_ENABLED true
+
 // - self destruct wallet after n failed unlock attempts
 // #define SELF_DESTRUCT_ENABLED false
 // #define SELF_DESTRUCT_MAX_FAILED_ATTEMPTS 10  // minimum value: 3

@@ -487,6 +487,11 @@
   #error "TIMEOUT_INACTIVITY_LOCK must be >= 20000ms (20s)"
 #endif
 
+// Blind signing: transactions, hashes and typed data the device can't show in plain language
+#ifndef BLIND_SIGNING_ENABLED
+  #define BLIND_SIGNING_ENABLED false
+#endif
+
 // Self-destruct
 #ifndef SELF_DESTRUCT_ENABLED
   #define SELF_DESTRUCT_ENABLED false
