@@ -187,7 +187,7 @@ std::string getUrAccount(
  */
 
 // TODO: signature request response
-std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16]) {
+std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16], size_t signatureLen) {
   uint8_t cbor[128];
   CborEncoder encoder;
 
@@ -203,7 +203,7 @@ std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16]) 
 
   // signature
   e = cbor_encode_uint(&key_map_encoder, 2);
-  e = cbor_encode_byte_string(&key_map_encoder, signature, RECOVERABLE_SIGNATURE_LENGTH);
+  e = cbor_encode_byte_string(&key_map_encoder, signature, signatureLen);
 
   // close
   e = cbor_encoder_close_container(&encoder, &key_map_encoder);

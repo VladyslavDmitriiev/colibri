@@ -38,6 +38,8 @@ std::string getUrAccount(
     std::string& hdPath, const uint32_t fingerprints[7]
 );
 
-std::string getUrEthSignature(const uint8_t* signature, const uint8_t uuid[16] = {0});
+std::string getUrEthSignature(
+    const uint8_t* signature, const uint8_t uuid[16] = {0}, size_t signatureLen = RECOVERABLE_SIGNATURE_LENGTH
+);
 
 int parseEthSignRequest(UR& ur, UrEthSignRequest& request);

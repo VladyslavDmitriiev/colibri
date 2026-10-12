@@ -655,9 +655,22 @@ WalletResponse Wallet::urSign(UR& ur) {
           // display transaction details for user approval
           if (!waitForApproval(DISPLAY_APPROVE_SIGN_TX)) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
-          uint8_t sigBytes[RECOVERABLE_SIGNATURE_LENGTH];
+          // signature with v as wallets expect it to build the signed tx (EIP-4527 / Keystone):
+          // y-parity for typed txs, EIP-155 `chainId * 2 + 35 + recid` (big-endian) for legacy txs
+          uint8_t sigBytes[RECOVERABLE_SIGNATURE_LENGTH + sizeof(uint64_t)];
           ethSignTransaction(&hdNode, tx, sigBytes);
-          std::string sig = getUrEthSignature(sigBytes, request.id);
+          uint8_t recid = sigBytes[RECOVERABLE_SIGNATURE_LENGTH - 1] - 27;
+          size_t sigLen = RECOVERABLE_SIGNATURE_LENGTH;
+          if (isLegacyTx) {
+            uint64_t v = tx.chainId * 2 + 35 + recid;
+            size_t vLen = 0;
+            for (uint64_t rest = v; rest > 0; rest >>= 8) vLen++;
+            for (size_t i = 0; i < vLen; i++) sigBytes[64 + i] = (v >> (8 * (vLen - 1 - i))) & 0xff;
+            sigLen = 64 + vLen;
+          } else {
+            sigBytes[RECOVERABLE_SIGNATURE_LENGTH - 1] = recid;
+          }
+          std::string sig = getUrEthSignature(sigBytes, request.id, sigLen);
           return WalletResponse(sig);
         }
 
