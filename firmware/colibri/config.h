@@ -179,13 +179,16 @@
 #endif
 
 // - LED defaults
-#if (!defined(LED_GPIO) && defined(LED_BUILTIN) && LED_BUILTIN >= 0)
+#if defined(LED_DISABLED) && !defined(DISPLAY_ENABLED)
+  #error "LED can only be disabled on boards with a display"
+#endif
+#if (!defined(LED_DISABLED) && !defined(LED_GPIO) && defined(LED_BUILTIN) && LED_BUILTIN >= 0)
   #define LED_GPIO LED_BUILTIN
 #endif
 #if (!defined(LED_GPIO) && !defined(LED_GPIO_NEOPIXEL) && !defined(DISPLAY_ENABLED))
   #error "LED pin is required"
 #endif
-#if (defined(LED_GPIO) || defined(LED_GPIO_NEOPIXEL))
+#if (!defined(LED_DISABLED) && (defined(LED_GPIO) || defined(LED_GPIO_NEOPIXEL)))
   #define LED_ENABLED
 
   #define led_update(...) led.update(__VA_ARGS__)
