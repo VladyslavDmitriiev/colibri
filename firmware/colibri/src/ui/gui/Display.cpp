@@ -222,9 +222,9 @@ void drawQrCode(esp_qrcode_handle_t qrCode) {
 
 // ===== Touch screens ===== //
 
-// Layout after Kern's compact keyboard: few keys per row for wide touch targets,
-// digits and symbols on their own page, rows stretched to the full width.
-static const int32_t KEYBOARD_TOP = 168;
+// Layout after Kern's compact keyboard: rows stretched to the full width, wide
+// modifier keys, symbols on their own page. Unlike Kern digits stay on the letter page.
+static const int32_t KEYBOARD_TOP = 200;
 static const int32_t KEY_GAP = 3;  // drawn inside each key, hit areas still touch
 static const int32_t FIELD_Y = 48, FIELD_H = 40;
 static const int32_t BACK_W = 56, BACK_H = 40;
@@ -246,6 +246,8 @@ static void keyboardKeys(uint8_t layout, bool withScan, std::vector<KeyboardKey>
     for (const char* c = chars; *c; c++) row.push_back({c, 1, KeyChar});
   };
   if (layout < 2) {
+    rows.emplace_back();
+    charRow(symbolRows[0], rows.back());
     for (int i = 0; i < 2; i++) {
       rows.emplace_back();
       charRow(letterRows[layout][i], rows.back());
@@ -253,7 +255,7 @@ static void keyboardKeys(uint8_t layout, bool withScan, std::vector<KeyboardKey>
     rows.push_back({{layout == 1 ? "abc" : "ABC", 2, KeyShift}});
     charRow(letterRows[layout][2], rows.back());
     rows.back().push_back({"Del", 2, KeyBackspace});
-    rows.push_back({{"1#", 2, KeySymbols}, {",", 1, KeyChar}, {" ", 5, KeyChar}, {".", 1, KeyChar}});
+    rows.push_back({{"#+=", 2, KeySymbols}, {",", 1, KeyChar}, {" ", 5, KeyChar}, {".", 1, KeyChar}});
   } else {
     for (int i = 0; i < 3; i++) {
       rows.emplace_back();
