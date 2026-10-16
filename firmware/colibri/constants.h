@@ -148,6 +148,23 @@ const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 #define DISPLAY_LINE_BIG "\x04"
 #define DISPLAY_LINE_NOTE "\x05"
 #define DISPLAY_LINE_ALERT "\x06"  // danger text
+// stateless mode
+const char DISPLAY_LOCKED_STATELESS[] =
+    DISPLAY_LINE_TITLE "LOCKED\n\n"
+    "Tap the screen to unlock with your Kern wallet from the SD card.\n\n"
+    DISPLAY_LINE_NOTE "Hold the button to lock again later.";
+const char DISPLAY_READING_SD[] = "Reading the SD card...";
+const char DISPLAY_NO_SD_CARD[] =
+    DISPLAY_LINE_WARNING "NO SD CARD\n" DISPLAY_LINE_NOTE "Insert the SD card with your Kern wallet.";
+const char DISPLAY_NO_KERN_WALLET[] =
+    DISPLAY_LINE_WARNING "NO KERN WALLET\n" DISPLAY_LINE_NOTE
+    "Save your seed phrase to the SD card in Kern first (encrypted, in /kern/mnemonics).";
+const char DISPLAY_DECRYPTING[] = "Unlocking...\n" DISPLAY_LINE_NOTE "This takes a few seconds";
+const char DISPLAY_WRONG_PASSWORD[] = DISPLAY_LINE_DANGER "WRONG PASSWORD";
+const char DISPLAY_KEF_UNSUPPORTED[] =
+    DISPLAY_LINE_WARNING "CAN'T READ THIS WALLET\n" DISPLAY_LINE_NOTE
+    "Only Kern's default encryption (AES-GCM) is supported.";
+
 const char DISPLAY_BLIND_SIGNING_OFF[] =
     DISPLAY_LINE_DANGER "NOT SIGNED\n"
     "This device can't show what this request does, so it refused to sign it.\n"

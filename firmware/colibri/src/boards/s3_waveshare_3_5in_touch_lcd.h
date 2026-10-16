@@ -20,6 +20,7 @@
 #define BOARD_I2C_ADDR_AXP2101 0x34
 #define BOARD_I2C_ADDR_TCA9554 0x20
 #define BOARD_TCA9554_LCD_RST_BIT 1
+#define BOARD_TCA9554_SD_D3_BIT 3  // SDMMC DAT3: high, or the card stays in SPI mode
 
 // Onboard 3.5" ST7796 display config
 #define DISPLAY_ENABLED
@@ -34,6 +35,16 @@
 #define DISPLAY_GPIO_SPI_SCLK 5
 #define DISPLAY_GPIO_SPI_DC 3
 #define DISPLAY_GPIO_BACKLIGHT 6
+
+// SD card, SDMMC 1-bit
+#define SD_MMC_GPIO_CLK 11
+#define SD_MMC_GPIO_CMD 10
+#define SD_MMC_GPIO_D0 9
+
+// FT6336 touch, shares the I2C bus with the camera's SCCB
+#define TOUCH_FT5X06_I2C_ADDR 0x38
+#define TOUCH_GPIO_I2C_SDA BOARD_GPIO_I2C_SDA
+#define TOUCH_GPIO_I2C_SCL BOARD_GPIO_I2C_SCL
 
 // Onboard OV5640 camera config
 #define CAMERA_ENABLED
@@ -81,10 +92,11 @@ static void boardInit() {
   uint8_t ldoEnable = boardReadRegister(BOARD_I2C_ADDR_AXP2101, 0x90);
   boardWriteRegister(BOARD_I2C_ADDR_AXP2101, 0x90, ldoEnable | (1 << 4) | (1 << 5));
 
-  // TCA9554: pulse LCD reset
+  // TCA9554: SD DAT3 high, pulse LCD reset
+  const uint8_t outputs = (1 << BOARD_TCA9554_LCD_RST_BIT) | (1 << BOARD_TCA9554_SD_D3_BIT);
   uint8_t ioConfig = boardReadRegister(BOARD_I2C_ADDR_TCA9554, 0x03);
-  boardWriteRegister(BOARD_I2C_ADDR_TCA9554, 0x03, ioConfig & ~(1 << BOARD_TCA9554_LCD_RST_BIT));
-  uint8_t ioOutput = boardReadRegister(BOARD_I2C_ADDR_TCA9554, 0x01);
+  boardWriteRegister(BOARD_I2C_ADDR_TCA9554, 0x03, ioConfig & ~outputs);
+  uint8_t ioOutput = boardReadRegister(BOARD_I2C_ADDR_TCA9554, 0x01) | (1 << BOARD_TCA9554_SD_D3_BIT);
   boardWriteRegister(BOARD_I2C_ADDR_TCA9554, 0x01, ioOutput & ~(1 << BOARD_TCA9554_LCD_RST_BIT));
   delay(10);
   boardWriteRegister(BOARD_I2C_ADDR_TCA9554, 0x01, ioOutput | (1 << BOARD_TCA9554_LCD_RST_BIT));

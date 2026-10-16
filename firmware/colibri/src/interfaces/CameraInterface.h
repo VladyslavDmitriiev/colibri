@@ -51,6 +51,13 @@ class CameraInterface : public Interface {
   uint64_t timeResultShown;
   uint64_t timeLastKeyCheck;
   bool isReady;
+  bool isSensorOn = false;
+#ifdef STATELESS_MODE
+  bool isLockShown = false;
+  void startSensor();
+  void stopSensor();
+  void showMenu();
+#endif
   char status[24] = {0};
   bool statusChanged = false;
   struct {

@@ -48,6 +48,10 @@ class Wallet {
   WalletResponse addMnemonic(std::string& mnemonic, uint16_t overwriteId = 0);
   WalletResponse createMnemonic(uint8_t words = DEFAULT_MNEMONIC_WORDS, uint16_t overwriteId = 0);
   WalletResponse unlock(std::string& password, bool requiresApproval = true);
+#ifdef STATELESS_MODE
+  // key from a mnemonic that only lives in RAM, until lock()
+  WalletResponse unlockStateless(const char* mnemonic, const char* bip39Passphrase);
+#endif
   WalletResponse wipeRemote(bool interfacesOnly = false);
   WalletResponse selectWallet(
       uint16_t id, const char* hdPath = DEFAULT_HD_PATH, const char* bip32Passphrase = "",
@@ -72,6 +76,7 @@ class Wallet {
 
  protected:
   bool locked;
+  bool hasStatelessKey = false;
   uint8_t pwHash[HASH_LENGTH];
   HDNode hdNode;
 

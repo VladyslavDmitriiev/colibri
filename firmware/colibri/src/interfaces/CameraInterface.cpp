@@ -5,6 +5,8 @@
 
 #include <cstring>
 
+#include "../core/Stateless.h"
+
 #if defined(CAMERA_ENABLED)
 
 esp_err_t camera_init() {
@@ -60,11 +62,14 @@ void CameraInterface::init() {
     return;
   }
 
+#ifndef STATELESS_MODE
   esp_err_t err = camera_init();
   if (err != ESP_OK) {
     log_e("Camera initialization failed with error 0x%x", err);
     return;
   }
+  isSensorOn = true;
+#endif
 
   qr = quirc_new();
   qrCode = (struct quirc_code*)ps_malloc(sizeof(struct quirc_code));
@@ -74,7 +79,8 @@ void CameraInterface::init() {
     if (qr) quirc_destroy(qr);
     free(qrCode);
     free(qrData);
-    esp_camera_deinit();
+    if (isSensorOn) esp_camera_deinit();
+    isSensorOn = false;
     return;
   }
 
@@ -89,8 +95,30 @@ void CameraInterface::update() {
   // scanning only makes sense once the wallet can sign
   if (wallet.isLocked()) {
     isReady = false;
+#ifdef STATELESS_MODE
+    // the camera and the touch panel share the I2C bus
+    if (isSensorOn) stopSensor();
+    if (!isLockShown) {
+      touchBegin();
+      statelessShowLocked();
+      isLockShown = true;
+    }
+    int16_t x, y;
+    if (touchTapped(x, y)) {
+      statelessUnlock();
+      isLockShown = false;
+    }
+#endif
     return;
   }
+#ifdef STATELESS_MODE
+  if (!isSensorOn) {
+    touchEnd();
+    startSensor();
+    isLockShown = false;
+    if (!isSensorOn) return;
+  }
+#endif
   if (!isReady) {
     // key check reads storage, don't do it every loop
     uint64_t now = millis();
@@ -110,6 +138,13 @@ void CameraInterface::update() {
     }
     return;
   }
+
+  #ifdef STATELESS_MODE
+  if (buttonOk.isShortPressed()) {
+    showMenu();
+    return;
+  }
+  #endif
 
   #ifdef BUTTON_LAYOUT_MAIN_TWO
   // show pairing QR (`ur:crypto-hdkey`) to connect a software wallet
@@ -288,7 +323,8 @@ void CameraInterface::stop() {
   disconnect();
   if (!initialised) return;
 
-  esp_camera_deinit();
+  if (isSensorOn) esp_camera_deinit();
+  isSensorOn = false;
   quirc_destroy(qr);
   qr = nullptr;
   free(qrCode);
@@ -300,6 +336,48 @@ void CameraInterface::stop() {
   isShowingResult = false;
   initialised = false;
 }
+
+#ifdef STATELESS_MODE
+void CameraInterface::startSensor() {
+  esp_err_t err = camera_init();
+  if (err != ESP_OK) {
+    log_e("Camera initialization failed with error 0x%x", err);
+    setStatus("Camera error");
+    return;
+  }
+  isSensorOn = true;
+  resetDecoder();
+  isReady = false;  // shows the scan screen again
+}
+
+void CameraInterface::stopSensor() {
+  esp_camera_deinit();
+  isSensorOn = false;
+  resetDecoder();
+}
+
+// touch menu, opened with the button while scanning
+void CameraInterface::showMenu() {
+  stopSensor();
+  touchBegin();
+  int choice = chooseOption("MENU", {"Pair wallet app", "Lock", "Back"});
+  touchEnd();
+  if (choice == 1) {
+    wallet.lock();
+    return;
+  }
+  startSensor();
+  if (choice == 0 && isSensorOn) {
+    // pairing QR (`ur:crypto-hdkey`) for MetaMask, Rabby etc.
+    WalletResponse r = wallet.urRequestPair();
+    if (r.status >= Ok) {
+      isShowingResult = true;
+      timeResultShown = millis();
+      isReady = true;
+    }
+  }
+}
+#endif
 
 void CameraInterface::wipe() { stop(); }
 

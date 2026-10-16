@@ -115,11 +115,11 @@ WalletResponse Wallet::setPassword(std::string& password) {
   return unlock(password, false);
 }
 
-bool Wallet::isLocked() { return isAllZero(pwHash, HASH_LENGTH) || locked; }
+bool Wallet::isLocked() { return (isAllZero(pwHash, HASH_LENGTH) && !hasStatelessKey) || locked; }
 
 bool Wallet::isPasswordSet() { return store.hasMnemonic(0) && store.hasIv(0); }
 
-bool Wallet::isKeySet() { return store.hasMnemonic(1) && store.hasIv(1); }
+bool Wallet::isKeySet() { return hasStatelessKey || (store.hasMnemonic(1) && store.hasIv(1)); }
 
 WalletResponse Wallet::unlock(std::string& password, bool requiresApproval) {
   log_i("Unlocking wallet...");
@@ -205,8 +205,34 @@ WalletResponse Wallet::unlock(std::string& password, bool requiresApproval) {
   return WalletResponse();
 }
 
+#ifdef STATELESS_MODE
+WalletResponse Wallet::unlockStateless(const char* mnemonic, const char* bip39Passphrase) {
+  if (!mnemonic_check(mnemonic)) return WalletResponse(InvalidParams, RPC_ERROR_MNEMONIC_INVALID);
+
+  uint8_t seed[BIP39_SEED_SIZE];
+  mnemonic_to_seed(mnemonic, bip39Passphrase ? bip39Passphrase : "", seed, NULL);
+  deleteHdNode();
+  chainType = getChainType(getSlip44(DEFAULT_HD_PATH));
+  int status = hdnode_from_seed(seed, BIP39_SEED_SIZE, getChainCurveType(chainType), &hdNode);
+  memzero(seed, sizeof(seed));
+  if (status != 1) return WalletResponse(InternalError, RPC_ERROR_INTERNAL_ERROR);
+
+  hasStatelessKey = true;
+  locked = false;
+  if (!setHdPath(DEFAULT_HD_PATH)) {
+    lock();
+    return WalletResponse(InternalError, RPC_ERROR_INTERNAL_ERROR);
+  }
+  walletId = 1;
+  timeLastActivity = millis();
+  log_i("Stateless wallet address: %s", getAddress().c_str());
+  return WalletResponse(Ok);
+}
+#endif
+
 void Wallet::lock() {
   deleteHdNode();
+  hasStatelessKey = false;
   memzero(pwHash, sizeof(pwHash));
   memzero(&storedSeedPhrases, sizeof(storedSeedPhrases));
   memzero(&walletId, sizeof(walletId));

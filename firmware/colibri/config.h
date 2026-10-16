@@ -472,6 +472,15 @@
 
 // Timeouts
 // - approvals
+#if defined(STATELESS_MODE) && !(defined(TOUCH_FT5X06_I2C_ADDR) && defined(SD_MMC_GPIO_CLK) && defined(CAMERA_ENABLED))
+  #error "STATELESS_MODE needs a touch screen, an SD card and a camera"
+#endif
+#ifndef TIMEOUT_TOUCH_INPUT
+  #define TIMEOUT_TOUCH_INPUT 120000  // 2min without a tap leaves a touch screen
+#endif
+#ifndef TOUCH_INPUT_MAX_LENGTH
+  #define TOUCH_INPUT_MAX_LENGTH 128
+#endif
 #ifndef TIMEOUT_WAIT_FOR_APPROVAL
   #define TIMEOUT_WAIT_FOR_APPROVAL 12000  // 12sec
 #endif
