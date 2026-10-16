@@ -21,7 +21,7 @@ static float lineTextSize(char style, float baseSize) {
   return style == DISPLAY_LINE_BIG[0] ? baseSize * 1.5f : baseSize;
 }
 
-static uint32_t lineColor(char style) {
+static uint16_t lineColor(char style) {
   switch (style) {
     case DISPLAY_LINE_TITLE[0]: return TFT_WHITE;
     case DISPLAY_LINE_WARNING[0]: return TFT_YELLOW;
