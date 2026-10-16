@@ -343,6 +343,15 @@
   #ifndef DISPLAY_COLOR_BG
     #define DISPLAY_COLOR_BG TFT_BLACK
   #endif
+
+  // titles, and frames and buttons of the touch screens
+  #ifndef DISPLAY_COLOR_TITLE
+    #define DISPLAY_COLOR_TITLE TFT_WHITE
+  #endif
+
+  #ifndef DISPLAY_COLOR_FRAME
+    #define DISPLAY_COLOR_FRAME DISPLAY_COLOR_TEXT
+  #endif
 #endif
 
 // - QR codes

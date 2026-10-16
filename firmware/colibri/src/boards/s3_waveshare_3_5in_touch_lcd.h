@@ -35,6 +35,10 @@
 #define DISPLAY_GPIO_SPI_SCLK 5
 #define DISPLAY_GPIO_SPI_DC 3
 #define DISPLAY_GPIO_BACKLIGHT 6
+// white on black with a light Ethereum blue-violet accent (#8C9EF5, RGB565 typed so it isn't read as RGB888)
+#define DISPLAY_COLOR_TEXT TFT_WHITE
+#define DISPLAY_COLOR_TITLE ((uint16_t)0x8CFE)
+#define DISPLAY_COLOR_FRAME ((uint16_t)0x8CFE)
 
 // SD card, SDMMC 1-bit
 #define SD_MMC_GPIO_CLK 11

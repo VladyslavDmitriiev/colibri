@@ -137,11 +137,13 @@ bool statelessUnlock(TextScanner scan) {
   }
 
   // the user compares the address with the one their wallet app knows
+  // like wallet apps: start and end big, as people compare those, the whole address below
   std::string address = wallet.getAddress();
   std::string grouped = address.substr(0, 6);
   for (size_t i = 6; i < address.size(); i += 4) grouped += " " + address.substr(i, 4);
-  std::string confirm = DISPLAY_LINE_TITLE "YOUR WALLET\n" + w.name + "\n\nAddress:\n" + grouped +
-      "\n" DISPLAY_LINE_NOTE "Same address as in your wallet app? A typo in the passphrase gives another wallet.";
+  std::string confirm = DISPLAY_LINE_TITLE "YOUR WALLET\n" + w.name + "\n\n" DISPLAY_LINE_BIG + address.substr(0, 6) +
+      "..." + address.substr(address.size() - 4) + "\n" DISPLAY_LINE_NOTE + grouped +
+      "\n\n" DISPLAY_LINE_NOTE "Same start and end as in your wallet app? A typo in the passphrase gives another wallet.";
   if (!waitForApproval(confirm.c_str())) {
     wallet.lock();
     return false;

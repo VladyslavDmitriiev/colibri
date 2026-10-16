@@ -45,7 +45,7 @@ static float lineTextSize(char style, const TextTier& tier) {
 
 static uint16_t lineColor(char style) {
   switch (style) {
-    case DISPLAY_LINE_TITLE[0]: return TFT_WHITE;
+    case DISPLAY_LINE_TITLE[0]: return DISPLAY_COLOR_TITLE;
     case DISPLAY_LINE_WARNING[0]: return TFT_YELLOW;
     case DISPLAY_LINE_DANGER[0]:
     case DISPLAY_LINE_ALERT[0]: return TFT_RED;
@@ -120,7 +120,7 @@ static void renderText(LovyanGFX& gfx, const char* message) {
     y += h;
   }
 
-  gfx.drawRect(5, 5, gfx.width() - 10, gfx.height() - 10, DISPLAY_COLOR_TEXT);
+  gfx.drawRect(5, 5, gfx.width() - 10, gfx.height() - 10, DISPLAY_COLOR_FRAME);
 }
 
 #ifdef DEBUG_REMOTE_CONTROL
@@ -298,11 +298,11 @@ static void renderKeyboard(
   gfx.setFont(&fonts::AsciiFont8x16);
   gfx.setTextSize(1);
   gfx.setTextDatum(top_center);
-  gfx.setTextColor(TFT_WHITE);
+  gfx.setTextColor(DISPLAY_COLOR_TITLE);
   gfx.drawString(title.c_str(), gfx.width() / 2, 16);
 
   // input field, scrolled to the end
-  gfx.drawRect(8, FIELD_Y, gfx.width() - 16, FIELD_H, DISPLAY_COLOR_TEXT);
+  gfx.drawRect(8, FIELD_Y, gfx.width() - 16, FIELD_H, DISPLAY_COLOR_FRAME);
   size_t maxChars = (gfx.width() - 32) / gfx.textWidth("0");
   std::string visible = shown.size() > maxChars ? shown.substr(shown.size() - maxChars) : shown;
   gfx.setTextDatum(middle_left);
@@ -317,14 +317,14 @@ static void renderKeyboard(
   gfx.setTextDatum(middle_center);
   for (size_t i = 0; i < keys.size(); i++) {
     const KeyboardKey& k = keys[i];
-    uint16_t frame = k.action == KeyDone ? TFT_GREEN : (k.action == KeyChar ? TFT_DARKGREY : TFT_LIGHTGREY);
+    uint16_t frame = k.action == KeyDone ? DISPLAY_COLOR_FRAME : (k.action == KeyChar ? TFT_DARKGREY : TFT_LIGHTGREY);
     int32_t x = k.x + KEY_GAP, y = k.y + KEY_GAP, w = k.w - 2 * KEY_GAP, h = k.h - 2 * KEY_GAP;
     if ((int)i == pressed) {
       gfx.fillRoundRect(x, y, w, h, 6, frame);
     } else {
       gfx.drawRoundRect(x, y, w, h, 6, frame);
     }
-    gfx.setTextColor((int)i == pressed ? DISPLAY_COLOR_BG : (k.action == KeyDone ? TFT_GREEN : TFT_WHITE));
+    gfx.setTextColor((int)i == pressed ? DISPLAY_COLOR_BG : (k.action == KeyDone ? DISPLAY_COLOR_FRAME : DISPLAY_COLOR_TEXT));
     gfx.setTextSize(k.label ? 1 : 2);
     if (k.label) {
       gfx.drawString(k.label, k.x + k.w / 2, k.y + k.h / 2);
@@ -441,7 +441,7 @@ static void renderMenu(LovyanGFX& gfx, const std::string& title, const std::vect
   gfx.setFont(&fonts::AsciiFont8x16);
   gfx.setTextSize(1);
   gfx.setTextDatum(top_center);
-  gfx.setTextColor(TFT_WHITE);
+  gfx.setTextColor(DISPLAY_COLOR_TITLE);
   // title may span lines
   int32_t y = 20;
   size_t start = 0;
@@ -456,7 +456,7 @@ static void renderMenu(LovyanGFX& gfx, const std::string& title, const std::vect
   gfx.setTextSize(2);
   for (size_t i = 0; i < options.size(); i++) {
     int32_t top = MENU_TOP + i * MENU_ITEM_HEIGHT;
-    gfx.drawRoundRect(16, top + 4, gfx.width() - 32, MENU_ITEM_HEIGHT - 8, 8, DISPLAY_COLOR_TEXT);
+    gfx.drawRoundRect(16, top + 4, gfx.width() - 32, MENU_ITEM_HEIGHT - 8, 8, DISPLAY_COLOR_FRAME);
     gfx.setTextColor(DISPLAY_COLOR_TEXT);
     gfx.drawString(options[i].c_str(), gfx.width() / 2, top + MENU_ITEM_HEIGHT / 2);
   }
