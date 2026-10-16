@@ -5,6 +5,17 @@
 
 #include "../../constants.h"
 
+// JSON-RPC quantities drop leading zeros ("0x1"), fromHex() only takes whole bytes
+static size_t fromHexQuantity(const char* hex, uint8_t* bytes, size_t maxBytesLen) {
+  if (hex == nullptr) return 0;
+  if (hex[0] == '0' && hex[1] == 'x') hex += 2;
+  size_t len = strlen(hex);
+  if (len == 0 || len > 2 * maxBytesLen) return 0;
+  if (len % 2 == 0) return fromHex(hex, bytes, maxBytesLen);
+  std::string padded = "0" + std::string(hex);
+  return fromHex(padded.c_str(), bytes, maxBytesLen);
+}
+
 static void rpcError(JsonDocument& response, const char* errorMsg, int errorCode) {
   log_v("rpcError called: %s\n", errorMsg);
 
@@ -273,27 +284,28 @@ void signEthereumTransaction(const JsonDocument& request, JsonDocument& response
     tx.isEip1559 = input.size() > 7;
     // parse hex input
     uint8_t chainIdBytes[8];
-    size_t chainIdLen = fromHex(input[0].as<const char*>(), chainIdBytes, 8);
+    size_t chainIdLen = fromHexQuantity(input[0].as<const char*>(), chainIdBytes, 8);
     tx.chainId = bytesToUint64(chainIdBytes, chainIdLen);
+    if (tx.chainId == 0) return rpcError(response, RPC_ERROR_INVALID_CHAIN_ID, Status::InvalidParams);
 
     fromHex(input[1].as<const char*>(), tx.to, ADDRESS_LENGTH);
 
-    tx.valueSize = fromHex(input[2].as<const char*>(), tx.value, sizeof(tx.value));
+    tx.valueSize = fromHexQuantity(input[2].as<const char*>(), tx.value, sizeof(tx.value));
 
     const char* dataStr = input[3];
     size_t dataLen = (strlen(dataStr) - 2) / 2;
     tx.dataSize = fromHex(dataStr, tx.data, dataLen);
 
-    tx.nonceSize = fromHex(input[4].as<const char*>(), tx.nonce, sizeof(tx.nonce));
+    tx.nonceSize = fromHexQuantity(input[4].as<const char*>(), tx.nonce, sizeof(tx.nonce));
 
-    tx.gasLimitSize = fromHex(input[5].as<const char*>(), tx.gasLimit, sizeof(tx.gasLimit));
+    tx.gasLimitSize = fromHexQuantity(input[5].as<const char*>(), tx.gasLimit, sizeof(tx.gasLimit));
 
-    tx.maxGasFeeSize = fromHex(input[6].as<const char*>(), tx.maxGasFee, sizeof(tx.maxGasFee));
+    tx.maxGasFeeSize = fromHexQuantity(input[6].as<const char*>(), tx.maxGasFee, sizeof(tx.maxGasFee));
 
     if (tx.isEip1559) {
       // EIP-1559
       tx.maxPriorityFeePerGasSize =
-          fromHex(input[7].as<const char*>(), tx.maxPriorityFeePerGas, sizeof(tx.maxPriorityFeePerGas));
+          fromHexQuantity(input[7].as<const char*>(), tx.maxPriorityFeePerGas, sizeof(tx.maxPriorityFeePerGas));
     }
   }
 

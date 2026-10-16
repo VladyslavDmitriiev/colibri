@@ -85,6 +85,7 @@ const char RPC_MSG_MNEMONIC_SCREEN[] = "The mnemonic phrase is being displayed o
 const char RPC_ERROR_METHOD_NOT_FOUND[] = "Method not found";
 const char RPC_ERROR_PARSE_ERROR[] = "Parse error";
 const char RPC_ERROR_INVALID_PARAMS[] = "Invalid params";
+const char RPC_ERROR_INVALID_CHAIN_ID[] = "Invalid chain ID";
 const char RPC_ERROR_INTERNAL_ERROR[] = "Internal error";
 const char RPC_ERROR_UNSPECIFIED_ERROR[] = "Unspecified error";
 const char RPC_ERROR_NOT_IMPLEMENTED[] = "Action not supported yet";
