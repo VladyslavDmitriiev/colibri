@@ -705,7 +705,10 @@ WalletResponse Wallet::urSign(UR& ur) {
           if (!waitForApproval(DISPLAY_APPROVE_SIGN_TYPED_DATA))
             return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
 
-          EIP712::computeTypedDataHash(typedDataJson, hash);
+          if (!EIP712::computeTypedDataHash(typedDataJson, hash)) {
+            log_e("Invalid or unsupported typed data");
+            return WalletResponse(InvalidParams, RPC_ERROR_DECODING);
+          }
           uint8_t sigBytes[RECOVERABLE_SIGNATURE_LENGTH];
           ethSignRecoverableDigest(&hdNode, hash, sigBytes);
           std::string sig = getUrEthSignature(sigBytes, request.id);
