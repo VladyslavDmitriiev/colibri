@@ -19,5 +19,7 @@ bool touchTapped(int16_t& x, int16_t& y);
 
   #ifdef DEBUG_REMOTE_CONTROL
 void touchSimulateTap(int16_t x, int16_t y);
+// a finger held at x, y until the next simulated tap
+void touchSimulateDown(int16_t x, int16_t y);
   #endif
 #endif

@@ -9,6 +9,7 @@
   #include "esp_camera.h"
 
 extern "C" {
+  #include <memzero.h>
   #include <quirc.h>
 }
 
@@ -37,6 +38,10 @@ class CameraInterface : public Interface {
   void stop();
   void disconnect();
   void wipe();
+#ifdef STATELESS_MODE
+  // blocking scan of one QR code as plain text, false on the button or a timeout
+  bool scanText(std::string& text);
+#endif
 
  private:
   struct quirc* qr;
@@ -73,5 +78,7 @@ class CameraInterface : public Interface {
   void setStatus(const char* text);
   void logStats();
 };
+
+extern CameraInterface cameraInterface;
 
 #endif

@@ -17,6 +17,7 @@ static bool ignoreUntilUp = false;
 static int16_t lastX, lastY;
   #ifdef DEBUG_REMOTE_CONTROL
 static bool hasSimulatedTap = false;
+static bool hasSimulatedDown = false;
 static int16_t simulatedX, simulatedY;
   #endif
 
@@ -51,13 +52,7 @@ static PointRead readPoint(int16_t& x, int16_t& y) {
   if (points > 2) return PointError;
   x = ((data[1] & 0x0f) << 8) | data[2];
   y = ((data[3] & 0x0f) << 8) | data[4];
-  if (x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT) return PointError;
-  #if defined(TOUCH_RAW_X_MIN) && defined(TOUCH_RAW_X_MAX)
-  x = constrain(
-      (int32_t)(x - TOUCH_RAW_X_MIN) * (DISPLAY_WIDTH - 1) / (TOUCH_RAW_X_MAX - TOUCH_RAW_X_MIN), 0, DISPLAY_WIDTH - 1
-  );
-  #endif
-  return PointDown;
+  return x < DISPLAY_WIDTH && y < DISPLAY_HEIGHT ? PointDown : PointError;
 }
 
 // The first report after touchdown is the least accurate one, so a tap counts where the
@@ -69,6 +64,11 @@ TouchState touchRead(int16_t& x, int16_t& y) {
     x = simulatedX;
     y = simulatedY;
     return TouchReleased;
+  }
+  if (hasSimulatedDown) {
+    x = simulatedX;
+    y = simulatedY;
+    return TouchDown;
   }
   #endif
   if (!isActive) return TouchUp;
@@ -107,6 +107,13 @@ void touchSimulateTap(int16_t x, int16_t y) {
   simulatedX = x;
   simulatedY = y;
   hasSimulatedTap = true;
+  hasSimulatedDown = false;
+}
+
+void touchSimulateDown(int16_t x, int16_t y) {
+  simulatedX = x;
+  simulatedY = y;
+  hasSimulatedDown = true;
 }
   #endif
 

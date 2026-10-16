@@ -105,7 +105,7 @@ void CameraInterface::update() {
     }
     int16_t x, y;
     if (touchTapped(x, y)) {
-      statelessUnlock();
+      statelessUnlock([](std::string& text) { return cameraInterface.scanText(text); });
       isLockShown = false;
     }
 #endif
@@ -354,6 +354,31 @@ void CameraInterface::stopSensor() {
   esp_camera_deinit();
   isSensorOn = false;
   resetDecoder();
+}
+
+bool CameraInterface::scanText(std::string& text) {
+  if (!initialised) return false;
+  bool wasOn = isSensorOn;
+  if (!isSensorOn) startSensor();
+  if (!isSensorOn) return false;
+  displayMessage(DISPLAY_SCAN_TEXT_QR);
+  setStatus(DISPLAY_SCAN_TEXT_QR);
+  buttonOk.reset();
+  bool found = false;
+  uint32_t frames = 0;
+  uint64_t start = millis();
+  while (!found && millis() - start < TIMEOUT_TOUCH_INPUT) {
+    updateUi();
+    if (buttonOk.isShortPressed()) break;
+    found = scanFrame(text);
+    frames++;
+  }
+  log_d("Text QR scan: %s after %u frames", found ? "found" : "none", frames);
+  // the decoder keeps the last payload, it may be a password
+  memzero(qrData->payload, sizeof(qrData->payload));
+  if (!wasOn) stopSensor();
+  buttonOk.reset();
+  return found;
 }
 
 // touch menu, opened with the button while scanning

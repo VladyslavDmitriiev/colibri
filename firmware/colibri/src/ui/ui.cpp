@@ -78,7 +78,7 @@ static void updateLed() {
 
 #ifdef DEBUG_REMOTE_CONTROL
 // serial commands to drive the device from a computer, debug builds only:
-// !ok, !ok2 (double click), !cancel, !long, !shot (screenshot), !tap X Y
+// !ok, !ok2 (double click), !cancel, !long, !shot (screenshot), !tap X Y, !down X Y (finger held until !tap)
 void debugRemoteCommand(const std::string& cmd) {
   log_i("Debug remote command: %s", cmd.c_str());
   if (cmd == "!ok") {
@@ -104,6 +104,9 @@ void debugRemoteCommand(const std::string& cmd) {
   } else if (cmd.rfind("!tap ", 0) == 0) {
     int x = 0, y = 0;
     if (sscanf(cmd.c_str() + 5, "%d %d", &x, &y) == 2) touchSimulateTap(x, y);
+  } else if (cmd.rfind("!down ", 0) == 0) {
+    int x = 0, y = 0;
+    if (sscanf(cmd.c_str() + 6, "%d %d", &x, &y) == 2) touchSimulateDown(x, y);
   #endif
   }
 }
@@ -262,7 +265,7 @@ static bool waitForTap(int16_t& x, int16_t& y, uint64_t& lastActivity) {
   return false;
 }
 
-bool readText(const char* title, std::string& text, bool secret) {
+bool readText(const char* title, std::string& text, bool secret, TextScanner scan) {
   bool wasHot = isHot;
   isHot = true;
   buttonOk.reset();
@@ -271,7 +274,7 @@ bool readText(const char* title, std::string& text, bool secret) {
   bool done = false;
   uint64_t lastActivity = millis();
   int pressed = -1;
-  auto redraw = [&]() { drawKeyboard(title, reveal ? text : std::string(text.size(), '*'), layout, pressed); };
+  auto redraw = [&]() { drawKeyboard(title, reveal ? text : std::string(text.size(), '*'), layout, scan, pressed); };
   redraw();
 
   // the key under the finger lights up and is typed when the finger lifts,
@@ -287,7 +290,7 @@ bool readText(const char* title, std::string& text, bool secret) {
     }
     lastActivity = millis();
     if (state == TouchDown) {
-      int under = keyboardKeyAt(layout, x, y);
+      int under = keyboardKeyAt(layout, scan, x, y);
       if (under != pressed) {
         pressed = under;
         redraw();
@@ -297,7 +300,7 @@ bool readText(const char* title, std::string& text, bool secret) {
     }
     pressed = -1;
     char ch = 0;
-    KeyAction action = keyboardHit(layout, x, y, ch);
+    KeyAction action = keyboardHit(layout, scan, x, y, ch);
     if (action == KeyDone) {
       done = true;
       break;
@@ -305,7 +308,6 @@ bool readText(const char* title, std::string& text, bool secret) {
     if (action == KeyCancel) break;
     if (action == KeyChar && text.size() < TOUCH_INPUT_MAX_LENGTH) {
       text += ch;
-      if (layout == 1) layout = 0;  // shift for one letter
     } else if (action == KeyBackspace && !text.empty()) {
       text.back() = 0;
       text.pop_back();
@@ -317,7 +319,26 @@ bool readText(const char* title, std::string& text, bool secret) {
       layout = 0;
     } else if (action == KeyToggleShow) {
       reveal = !reveal;
+    } else if (action == KeyScan && scan) {
+      // the camera draws over the screen and may need the touch panel's bus
+      closeKeyboard();
+      touchEnd();
+      std::string scanned;
+      if (scan(scanned)) {
+        bool typable = scanned.size() <= TOUCH_INPUT_MAX_LENGTH;
+        for (char c : scanned) typable = typable && c >= 0x20 && c <= 0x7e;
+        if (typable) {
+          memzero((void*)text.data(), text.size());
+          text = scanned;
+        } else {
+          displayMessage(DISPLAY_QR_NOT_TEXT);
+          delay(3000);
+        }
+      }
+      memzero((void*)scanned.data(), scanned.size());
+      touchBegin();
     }
+    lastActivity = millis();
     redraw();
   }
   closeKeyboard();

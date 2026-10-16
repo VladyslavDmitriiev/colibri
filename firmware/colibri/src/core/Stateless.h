@@ -2,6 +2,7 @@
 #pragma once
 
 #include "../../config.h"
+#include "../ui/ui.h"
 
 // STATELESS_MODE: nothing secret is stored on the device. The seed comes from a Kern wallet
 // (KEF envelope in /kern/mnemonics on the SD card), its password is typed on the touch screen,
@@ -9,7 +10,8 @@
 #ifdef STATELESS_MODE
 
 void statelessShowLocked();
-// blocking, true if the wallet got unlocked; the camera must be off, touch active
-bool statelessUnlock();
+// blocking, true if the wallet got unlocked; the camera must be off, touch active.
+// With `scan` passwords and the passphrase can also come from a QR code.
+bool statelessUnlock(TextScanner scan = nullptr);
 
 #endif

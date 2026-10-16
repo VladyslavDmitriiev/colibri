@@ -222,43 +222,75 @@ void drawQrCode(esp_qrcode_handle_t qrCode) {
 
 // ===== Touch screens ===== //
 
-static const int32_t KEY_ROW_HEIGHT = 50;
-static const int32_t KEYBOARD_TOP = DISPLAY_HEIGHT - 5 * KEY_ROW_HEIGHT - 8;
+// Layout after Kern's compact keyboard: few keys per row for wide touch targets,
+// digits and symbols on their own page, rows stretched to the full width.
+static const int32_t KEYBOARD_TOP = 168;
+static const int32_t KEY_GAP = 3;  // drawn inside each key, hit areas still touch
+static const int32_t FIELD_Y = 48, FIELD_H = 40;
+static const int32_t BACK_W = 56, BACK_H = 40;
 
-static void keyboardKeys(uint8_t layout, std::vector<KeyboardKey>& keys) {
-  static const char* const rows[3][4] = {
-      {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"},
-      {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
-      {"!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/?", "`~"},
+struct KeySpec {
+  const char* text;  // one character for KeyChar, else the label
+  uint8_t units;
+  KeyAction action;
+};
+
+static void keyboardKeys(uint8_t layout, bool withScan, std::vector<KeyboardKey>& keys) {
+  static const char* const letterRows[2][3] = {
+      {"qwertyuiop", "asdfghjkl", "zxcvbnm"},
+      {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
   };
-  keys.clear();
-  const int32_t width = DISPLAY_WIDTH;
-  for (int row = 0; row < 4; row++) {
-    const char* chars = rows[layout][row];
-    int32_t count = strlen(chars);
-    int32_t keyWidth = width / 10;
-    int32_t x = (width - count * keyWidth) / 2;
-    int32_t y = KEYBOARD_TOP + row * KEY_ROW_HEIGHT;
-    if (row == 3) {
-      // shift / symbols toggle left, backspace right
-      keys.push_back({0, y, keyWidth * 3 / 2, KEY_ROW_HEIGHT, layout == 2 ? "ABC" : (layout == 1 ? "abc" : "Shift"),
-                      0, layout == 2 ? KeyLetters : KeyShift});
-      keys.push_back({width - keyWidth * 3 / 2, y, keyWidth * 3 / 2, KEY_ROW_HEIGHT, "Del", 0, KeyBackspace});
+  static const char* const symbolRows[4] = {"1234567890", "@#$%&*+-=/", "()[]{}<>\"'", "!?;:_\\|"};
+  std::vector<std::vector<KeySpec>> rows;
+  auto charRow = [](const char* chars, std::vector<KeySpec>& row) {
+    for (const char* c = chars; *c; c++) row.push_back({c, 1, KeyChar});
+  };
+  if (layout < 2) {
+    for (int i = 0; i < 2; i++) {
+      rows.emplace_back();
+      charRow(letterRows[layout][i], rows.back());
     }
-    for (int32_t i = 0; i < count; i++) {
-      keys.push_back({x + i * keyWidth, y, keyWidth, KEY_ROW_HEIGHT, nullptr, chars[i], KeyChar});
+    rows.push_back({{layout == 1 ? "abc" : "ABC", 2, KeyShift}});
+    charRow(letterRows[layout][2], rows.back());
+    rows.back().push_back({"Del", 2, KeyBackspace});
+    rows.push_back({{"1#", 2, KeySymbols}, {",", 1, KeyChar}, {" ", 5, KeyChar}, {".", 1, KeyChar}});
+  } else {
+    for (int i = 0; i < 3; i++) {
+      rows.emplace_back();
+      charRow(symbolRows[i], rows.back());
+    }
+    rows.push_back({{"abc", 2, KeyLetters}});
+    charRow(symbolRows[3], rows.back());
+    rows.back().push_back({"Del", 2, KeyBackspace});
+    rows.push_back({{"~", 1, KeyChar}, {"^", 1, KeyChar}, {"`", 1, KeyChar}, {" ", 5, KeyChar}});
+  }
+  if (withScan) {
+    for (KeySpec& k : rows.back()) {
+      if (k.text[0] == ' ') k.units = 3;  // space makes room
+    }
+    rows.back().push_back({"QR", 2, KeyScan});
+  }
+  rows.back().push_back({"OK", 2, KeyDone});
+
+  keys.clear();
+  keys.push_back({0, 0, BACK_W, BACK_H, "<", 0, KeyCancel});
+  const int32_t rowHeight = (DISPLAY_HEIGHT - KEYBOARD_TOP) / rows.size();
+  for (size_t r = 0; r < rows.size(); r++) {
+    int32_t total = 0, done = 0;
+    for (const KeySpec& k : rows[r]) total += k.units;
+    for (const KeySpec& k : rows[r]) {
+      int32_t x = DISPLAY_WIDTH * done / total;
+      done += k.units;
+      int32_t w = DISPLAY_WIDTH * done / total - x;
+      bool isChar = k.action == KeyChar;
+      const char* label = !isChar ? k.text : (k.text[0] == ' ' ? "space" : nullptr);
+      keys.push_back({x, KEYBOARD_TOP + (int32_t)r * rowHeight, w, rowHeight, label, isChar ? k.text[0] : (char)0, k.action});
     }
   }
-  int32_t y = KEYBOARD_TOP + 4 * KEY_ROW_HEIGHT;
-  int32_t unit = width / 10;
-  keys.push_back({0, y, unit * 2, KEY_ROW_HEIGHT, layout == 2 ? "abc" : "#+=", 0, layout == 2 ? KeyLetters : KeySymbols});
-  keys.push_back({unit * 2, y, unit * 4, KEY_ROW_HEIGHT, "space", ' ', KeyChar});
-  keys.push_back({unit * 6, y, unit * 2, KEY_ROW_HEIGHT, "Back", 0, KeyCancel});
-  keys.push_back({unit * 8, y, width - unit * 8, KEY_ROW_HEIGHT, "OK", 0, KeyDone});
 }
 
 static void renderKeyboard(
-    LovyanGFX& gfx, const std::string& title, const std::string& shown, uint8_t layout, int pressed
+    LovyanGFX& gfx, const std::string& title, const std::string& shown, uint8_t layout, bool withScan, int pressed
 ) {
   gfx.fillScreen(DISPLAY_COLOR_BG);
   gfx.setFont(&fonts::AsciiFont8x16);
@@ -268,27 +300,27 @@ static void renderKeyboard(
   gfx.drawString(title.c_str(), gfx.width() / 2, 16);
 
   // input field, scrolled to the end
-  const int32_t fieldY = 48, fieldH = 40;
-  gfx.drawRect(8, fieldY, gfx.width() - 16, fieldH, DISPLAY_COLOR_TEXT);
+  gfx.drawRect(8, FIELD_Y, gfx.width() - 16, FIELD_H, DISPLAY_COLOR_TEXT);
   size_t maxChars = (gfx.width() - 32) / gfx.textWidth("0");
   std::string visible = shown.size() > maxChars ? shown.substr(shown.size() - maxChars) : shown;
   gfx.setTextDatum(middle_left);
   gfx.setTextColor(DISPLAY_COLOR_TEXT);
-  gfx.drawString((visible + "_").c_str(), 16, fieldY + fieldH / 2);
+  gfx.drawString((visible + "_").c_str(), 16, FIELD_Y + FIELD_H / 2);
   gfx.setTextDatum(top_center);
   gfx.setTextColor(TFT_LIGHTGREY);
-  gfx.drawString("Tap the field to show or hide", gfx.width() / 2, fieldY + fieldH + 8);
+  gfx.drawString("Tap the field to show or hide", gfx.width() / 2, FIELD_Y + FIELD_H + 8);
 
   std::vector<KeyboardKey> keys;
-  keyboardKeys(layout, keys);
+  keyboardKeys(layout, withScan, keys);
   gfx.setTextDatum(middle_center);
   for (size_t i = 0; i < keys.size(); i++) {
     const KeyboardKey& k = keys[i];
     uint16_t frame = k.action == KeyDone ? TFT_GREEN : (k.action == KeyChar ? TFT_DARKGREY : TFT_LIGHTGREY);
+    int32_t x = k.x + KEY_GAP, y = k.y + KEY_GAP, w = k.w - 2 * KEY_GAP, h = k.h - 2 * KEY_GAP;
     if ((int)i == pressed) {
-      gfx.fillRoundRect(k.x + 2, k.y + 2, k.w - 4, k.h - 4, 6, frame);
+      gfx.fillRoundRect(x, y, w, h, 6, frame);
     } else {
-      gfx.drawRoundRect(k.x + 2, k.y + 2, k.w - 4, k.h - 4, 6, frame);
+      gfx.drawRoundRect(x, y, w, h, 6, frame);
     }
     gfx.setTextColor((int)i == pressed ? DISPLAY_COLOR_BG : (k.action == KeyDone ? TFT_GREEN : TFT_WHITE));
     gfx.setTextSize(k.label ? 1 : 2);
@@ -298,6 +330,19 @@ static void renderKeyboard(
       char label[2] = {k.ch, 0};
       gfx.drawString(label, k.x + k.w / 2, k.y + k.h / 2);
     }
+  }
+
+  // the pressed character, enlarged above the finger so it can be read without lifting it
+  if (pressed >= 0 && pressed < (int)keys.size() && keys[pressed].action == KeyChar && !keys[pressed].label) {
+    const KeyboardKey& k = keys[pressed];
+    const int32_t w = 56, h = 72;
+    int32_t x = constrain(k.x + k.w / 2 - w / 2, 0, (int32_t)gfx.width() - w);
+    int32_t y = k.y - h - 4;
+    gfx.fillRoundRect(x, y, w, h, 10, TFT_WHITE);
+    gfx.setTextColor(DISPLAY_COLOR_BG);
+    gfx.setTextSize(4);
+    char label[2] = {k.ch, 0};
+    gfx.drawString(label, x + w / 2, y + h / 2);
   }
 }
 
@@ -325,10 +370,12 @@ static LGFX_Sprite* newKeyboardSprite() {
   return sprite;
 }
 
-void drawKeyboard(const char* title, const std::string& shown, uint8_t layout, int pressed) {
+void drawKeyboard(const char* title, const std::string& shown, uint8_t layout, bool withScan, int pressed) {
   #ifdef DEBUG_REMOTE_CONTROL
   std::string t = title;
-  lastScreen = [t, shown, layout, pressed](LovyanGFX& gfx) { renderKeyboard(gfx, t, shown, layout, pressed); };
+  lastScreen = [t, shown, layout, withScan, pressed](LovyanGFX& gfx) {
+    renderKeyboard(gfx, t, shown, layout, withScan, pressed);
+  };
   #endif
   if (!keyboardFrame) keyboardFrame = newKeyboardSprite();
   if (keyboardFrame && !keyboardShown) {
@@ -340,12 +387,12 @@ void drawKeyboard(const char* title, const std::string& shown, uint8_t layout, i
     freeKeyboardSprite(keyboardFrame);
     freeKeyboardSprite(keyboardShown);
     display.startWrite();
-    renderKeyboard(display, title, shown, layout, pressed);
+    renderKeyboard(display, title, shown, layout, withScan, pressed);
     display.endWrite();
     return;
   }
 
-  renderKeyboard(*keyboardFrame, title, shown, layout, pressed);
+  renderKeyboard(*keyboardFrame, title, shown, layout, withScan, pressed);
   const int32_t width = keyboardFrame->width(), height = keyboardFrame->height();
   const uint16_t* next = (const uint16_t*)keyboardFrame->getBuffer();
   const uint16_t* prev = (const uint16_t*)keyboardShown->getBuffer();
@@ -365,9 +412,9 @@ void closeKeyboard() {
   freeKeyboardSprite(keyboardShown);
 }
 
-int keyboardKeyAt(uint8_t layout, int16_t x, int16_t y) {
+int keyboardKeyAt(uint8_t layout, bool withScan, int16_t x, int16_t y) {
   std::vector<KeyboardKey> keys;
-  keyboardKeys(layout, keys);
+  keyboardKeys(layout, withScan, keys);
   for (size_t i = 0; i < keys.size(); i++) {
     const KeyboardKey& k = keys[i];
     if (x >= k.x && x < k.x + k.w && y >= k.y && y < k.y + k.h) return i;
@@ -375,12 +422,12 @@ int keyboardKeyAt(uint8_t layout, int16_t x, int16_t y) {
   return -1;
 }
 
-KeyAction keyboardHit(uint8_t layout, int16_t x, int16_t y, char& ch) {
-  if (y >= 48 && y < 48 + 40 + 24) return KeyToggleShow;
-  int i = keyboardKeyAt(layout, x, y);
+KeyAction keyboardHit(uint8_t layout, bool withScan, int16_t x, int16_t y, char& ch) {
+  if (y >= FIELD_Y && y < FIELD_Y + FIELD_H + 24) return KeyToggleShow;
+  int i = keyboardKeyAt(layout, withScan, x, y);
   if (i < 0) return KeyNone;
   std::vector<KeyboardKey> keys;
-  keyboardKeys(layout, keys);
+  keyboardKeys(layout, withScan, keys);
   ch = keys[i].ch;
   return keys[i].action;
 }

@@ -37,7 +37,10 @@ bool waitForApproval(const char* text, RgbColor color = Hot);
 void waitForDismiss(const char* text);
 #ifdef TOUCH_ENABLED
 // touch keyboard, false if the user went back or didn't type for a while
-bool readText(const char* title, std::string& text, bool secret = true);
+// fills `text` from a scanned QR code, false if nothing was scanned
+typedef bool (*TextScanner)(std::string& text);
+// touch keyboard; with `scan` it gets a QR key, the scanned text lands in the field for review
+bool readText(const char* title, std::string& text, bool secret = true, TextScanner scan = nullptr);
 // buttons, index of the chosen option or -1
 int chooseOption(const char* title, const std::vector<std::string>& options);
 #endif

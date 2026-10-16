@@ -131,6 +131,7 @@ const char DISPLAY_CONNECTED[] = "Connected";
 const char DISPLAY_NOT_CONNECTED[] = "Not Connected";
 const char DISPLAY_LOCKED[] = "Locked";
 const char DISPLAY_SCAN_QR[] = "Scan QR";
+const char DISPLAY_SCAN_TEXT_QR[] = "Scan text QR, button: back";
 const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 #ifdef BUTTON_LAYOUT_MAIN_TWO
   #define DISPLAY_HINT_APPROVE "Approve: press OK"
@@ -161,6 +162,7 @@ const char DISPLAY_NO_KERN_WALLET[] =
     "Save your seed phrase to the SD card in Kern first (encrypted, in /kern/mnemonics).";
 const char DISPLAY_DECRYPTING[] = "Unlocking...\n" DISPLAY_LINE_NOTE "This takes a few seconds";
 const char DISPLAY_WRONG_PASSWORD[] = DISPLAY_LINE_DANGER "WRONG PASSWORD";
+const char DISPLAY_QR_NOT_TEXT[] = DISPLAY_LINE_DANGER "QR NOT USABLE\nOnly letters, digits, spaces and the symbols on the keyboard can be used.";
 const char DISPLAY_KEF_UNSUPPORTED[] =
     DISPLAY_LINE_WARNING "CAN'T READ THIS WALLET\n" DISPLAY_LINE_NOTE
     "Only Kern's default encryption (AES-GCM) is supported.";

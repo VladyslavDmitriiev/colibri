@@ -68,7 +68,7 @@ static bool readKernWallets(std::vector<KernWallet>& wallets) {
 
 void statelessShowLocked() { displayMessage(DISPLAY_LOCKED_STATELESS); }
 
-bool statelessUnlock() {
+bool statelessUnlock(TextScanner scan) {
   displayMessage(DISPLAY_READING_SD);
   std::vector<KernWallet> wallets;
   bool hasCard = sdMount();
@@ -96,7 +96,7 @@ bool statelessUnlock() {
   std::vector<uint8_t> entropy;
   while (true) {
     std::string password;
-    if (!readText(("Password of " + w.name).c_str(), password)) return false;
+    if (!readText(("Password of " + w.name).c_str(), password, true, scan)) return false;
     displayMessage(DISPLAY_DECRYPTING);
     uint64_t start = millis();
     KefResult r = kefDecrypt(w.envelope, password, entropy);
@@ -121,8 +121,8 @@ bool statelessUnlock() {
   }
 
   std::string passphrase;
-  int choice = chooseOption("BIP39 passphrase?", {"No passphrase", "Type passphrase"});
-  if (choice < 0 || (choice == 1 && !readText("BIP39 passphrase", passphrase))) {
+  int choice = chooseOption("BIP39 passphrase?", {"No passphrase", "Enter passphrase"});
+  if (choice < 0 || (choice == 1 && !readText("BIP39 passphrase", passphrase, true, scan))) {
     mnemonic_clear();
     return false;
   }
