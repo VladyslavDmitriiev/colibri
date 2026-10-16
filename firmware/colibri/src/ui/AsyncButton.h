@@ -15,6 +15,10 @@ class AsyncButton {
   bool isLongPressed();
   bool isMultiPressed(uint8_t count);
   void reset();
+#ifdef DEBUG_REMOTE_CONTROL
+  void simulateClick();
+  void simulateLongPress();
+#endif
 
  private:
   bool _lastButtonState;

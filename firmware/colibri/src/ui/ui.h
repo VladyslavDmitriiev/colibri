@@ -27,6 +27,9 @@ extern bool isOtaActive;
 extern Connection connection;
 
 void updateUi();
+#ifdef DEBUG_REMOTE_CONTROL
+void debugRemoteCommand(const std::string& cmd);
+#endif
 
 bool waitForApproval(const char* text, RgbColor color = Hot);
 

@@ -34,7 +34,7 @@ static uint16_t lineColor(char style) {
 
 // Splits text at newlines, takes the style prefix of each line and wraps lines wider
 // than the frame, at the last space if there is one
-static std::vector<TextLine> layoutText(const char* message, float baseSize, int32_t maxWidth) {
+static std::vector<TextLine> layoutText(LovyanGFX& gfx, const char* message, float baseSize, int32_t maxWidth) {
   std::vector<TextLine> lines;
   const char* c = message;
   while (true) {
@@ -43,8 +43,8 @@ static std::vector<TextLine> layoutText(const char* message, float baseSize, int
     char style = (!raw.empty() && isLineStyle(raw[0])) ? raw[0] : 0;
     if (style) raw.erase(0, 1);
 
-    display.setTextSize(lineTextSize(style, baseSize));
-    size_t maxChars = maxWidth / display.textWidth("0");
+    gfx.setTextSize(lineTextSize(style, baseSize));
+    size_t maxChars = maxWidth / gfx.textWidth("0");
     if (maxChars < 1) maxChars = 1;
     do {
       size_t n = raw.size();
@@ -64,18 +64,17 @@ static std::vector<TextLine> layoutText(const char* message, float baseSize, int
 }
 
 // line pitch with spacing, so multi-line text stays readable
-static int32_t lineHeight(const TextLine& line, float baseSize) {
-  display.setTextSize(lineTextSize(line.style, baseSize));
-  return display.fontHeight() * 3 / 2;
+static int32_t lineHeight(LovyanGFX& gfx, const TextLine& line, float baseSize) {
+  gfx.setTextSize(lineTextSize(line.style, baseSize));
+  return gfx.fontHeight() * 3 / 2;
 }
 
 // Centered text, multiple lines separated by `\n`, each optionally styled by a DISPLAY_LINE_*
 // prefix. Long lines wrap, and the text falls back to the small font size if it doesn't fit.
-void drawText(const char* message) {
-  display.startWrite();
-  display.clearDisplay();
-  display.fillScreen(DISPLAY_COLOR_BG);
-  display.setFont(&fonts::Font0);
+// renders on the panel or, for screenshots, on a sprite
+static void renderText(LovyanGFX& gfx, const char* message) {
+  gfx.fillScreen(DISPLAY_COLOR_BG);
+  gfx.setFont(&fonts::Font0);
 
   float baseSize = 1.0f;
   #ifndef DISPLAY_SMALL
@@ -86,25 +85,39 @@ void drawText(const char* message) {
   std::vector<TextLine> lines;
   int32_t totalHeight;
   while (true) {
-    lines = layoutText(message, baseSize, display.width() - 2 * padding);
+    lines = layoutText(gfx, message, baseSize, gfx.width() - 2 * padding);
     totalHeight = 0;
-    for (const TextLine& line : lines) totalHeight += lineHeight(line, baseSize);
-    if (baseSize <= 1.0f || totalHeight <= display.height() - 2 * padding) break;
+    for (const TextLine& line : lines) totalHeight += lineHeight(gfx, line, baseSize);
+    if (baseSize <= 1.0f || totalHeight <= gfx.height() - 2 * padding) break;
     baseSize = 1.0f;
   }
 
-  int32_t y = (display.height() - totalHeight) / 2;
-  display.setTextDatum(middle_center);
+  int32_t y = (gfx.height() - totalHeight) / 2;
+  gfx.setTextDatum(middle_center);
   for (const TextLine& line : lines) {
-    int32_t h = lineHeight(line, baseSize);
-    display.setTextColor(lineColor(line.style));
-    display.drawString(line.text.c_str(), display.width() / 2, y + h / 2);
+    int32_t h = lineHeight(gfx, line, baseSize);
+    gfx.setTextColor(lineColor(line.style));
+    gfx.drawString(line.text.c_str(), gfx.width() / 2, y + h / 2);
     y += h;
   }
 
-  display.drawRect(5, 5, display.width() - 10, display.height() - 10, DISPLAY_COLOR_TEXT);
+  gfx.drawRect(5, 5, gfx.width() - 10, gfx.height() - 10, DISPLAY_COLOR_TEXT);
+}
+
+#ifdef DEBUG_REMOTE_CONTROL
+static std::string lastText;  // text screen on the panel, empty while it shows something else
+#endif
+
+void drawText(const char* message) {
+#ifdef DEBUG_REMOTE_CONTROL
+  lastText = message;
+#endif
+  display.startWrite();
+  display.clearDisplay();
+  renderText(display, message);
   display.endWrite();
 }
+
 
 void initDisplay() {
   display.setRotation(DISPLAY_ROTATION);
@@ -119,6 +132,9 @@ void initDisplay() {
 
 // Downscaled grayscale camera frame at the top, a status line below, for aiming at QR codes
 void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const char* status) {
+#ifdef DEBUG_REMOTE_CONTROL
+  lastText.clear();
+#endif
   size_t step = (width + display.width() - 1) / display.width();
   if (step < 1) step = 1;
   size_t w = width / step;
@@ -156,6 +172,9 @@ void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const c
 }
 
 void drawQrCode(esp_qrcode_handle_t qrCode) {
+#ifdef DEBUG_REMOTE_CONTROL
+  lastText.clear();
+#endif
   #ifndef DISPLAY_SMALL
 
   display.startWrite();
@@ -178,5 +197,33 @@ void drawQrCode(esp_qrcode_handle_t qrCode) {
 
   #endif
 }
+
+#ifdef DEBUG_REMOTE_CONTROL
+// last text screen as raw RGB565 (little endian) after a "SHOT_BEGIN w h bytes" line, read by ctl.py.
+// The panel can't be read back (no MISO on some boards), so the text is drawn again on a PSRAM sprite.
+void dumpDisplay() {
+  if (lastText.empty()) {
+    Serial.println("SHOT_NONE no text screen shown");
+    return;
+  }
+  LGFX_Sprite sprite(&display);
+  sprite.setPsram(true);
+  sprite.setColorDepth(16);
+  if (!sprite.createSprite(display.width(), display.height())) {
+    Serial.println("SHOT_NONE sprite allocation failed");
+    return;
+  }
+  renderText(sprite, lastText.c_str());
+  int32_t w = sprite.width(), h = sprite.height();
+  Serial.printf("SHOT_BEGIN %d %d %d\n", w, h, w * h * 2);
+  for (int32_t y = 0; y < h; y++) {
+    uint16_t row[DISPLAY_WIDTH > DISPLAY_HEIGHT ? DISPLAY_WIDTH : DISPLAY_HEIGHT];
+    for (int32_t x = 0; x < w; x++) row[x] = sprite.readPixel(x, y);
+    Serial.write((const uint8_t*)row, w * 2);
+  }
+  Serial.flush();
+  sprite.deleteSprite();
+}
+#endif
 
 #endif

@@ -13,6 +13,9 @@ void initDisplay();
 void drawText(const char* message);
 void drawQrCode(esp_qrcode_handle_t qrcode);
 void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const char* status);
+#ifdef DEBUG_REMOTE_CONTROL
+void dumpDisplay();
+#endif
 
 #else
 

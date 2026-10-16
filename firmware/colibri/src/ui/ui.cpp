@@ -75,7 +75,49 @@ static void updateLed() {
   led_update();
 }
 
+#ifdef DEBUG_REMOTE_CONTROL
+// serial commands to drive the device from a computer, debug builds only:
+// !ok, !ok2 (double click), !cancel, !long, !shot (screenshot)
+void debugRemoteCommand(const std::string& cmd) {
+  log_i("Debug remote command: %s", cmd.c_str());
+  if (cmd == "!ok") {
+    buttonOk.simulateClick();
+  } else if (cmd == "!ok2") {
+    buttonOk.simulateClick();
+    buttonOk.simulateClick();
+  } else if (cmd == "!cancel") {
+  #ifdef BUTTON_LAYOUT_MAIN_TWO
+    buttonCancel.simulateClick();
+  #else
+    buttonOk.simulateLongPress();
+  #endif
+  } else if (cmd == "!long") {
+    buttonOk.simulateLongPress();
+  } else if (cmd == "!shot") {
+    dumpDisplay();
+  }
+}
+
+// while a request blocks the main loop nobody else reads the serial port
+static void debugRemotePoll() {
+  static std::string line;
+  if (!isBusy && !isHot) return;
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (!line.empty() && line[0] == '!') debugRemoteCommand(line);
+      line.clear();
+    } else if (line.size() < 32) {
+      line += c;
+    }
+  }
+}
+#endif
+
 void updateUi() {
+#ifdef DEBUG_REMOTE_CONTROL
+  debugRemotePoll();
+#endif
   if (isOtaActive) {
     updateOta();
   }
@@ -87,6 +129,7 @@ void updateUi() {
 }
 
 void displayMessage(const char* message) {
+  log_d("Display: %s", message);
 #ifdef DISPLAY_ENABLED
   drawText(message);
 #endif

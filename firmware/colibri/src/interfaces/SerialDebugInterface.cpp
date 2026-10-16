@@ -22,6 +22,20 @@ void SerialDebugInterface::update() {
 
     while (Serial.available()) {
       char c = Serial.read();
+#ifdef DEBUG_REMOTE_CONTROL
+      if (c == '!' && inputBuffer.find('{') == std::string::npos) {
+        std::string cmd(1, c);
+        uint64_t startTime = millis();
+        while (millis() - startTime < 500) {
+          int next = Serial.read();
+          if (next < 0) continue;
+          if (next == '\n' || next == '\r' || cmd.size() >= 32) break;
+          cmd += (char)next;
+        }
+        debugRemoteCommand(cmd);
+        continue;
+      }
+#endif
       if (c == '{') {
         // new payload begins
         inputBuffer.clear();

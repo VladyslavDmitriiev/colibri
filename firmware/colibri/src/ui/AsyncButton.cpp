@@ -87,3 +87,13 @@ void AsyncButton::reset() {
   _longPressDetected = false;
   _clickDetected = false;
 }
+
+#ifdef DEBUG_REMOTE_CONTROL
+void AsyncButton::simulateClick() {
+  _clickDetected = true;
+  _clickCount++;
+  if (_clickCount == 1) _firstClickTime = millis();
+}
+
+void AsyncButton::simulateLongPress() { _longPressDetected = true; }
+#endif
