@@ -569,3 +569,214 @@ std::string ethFormatTransaction(const EthTxData& tx, bool* isBlind) {
   while (!text.empty() && text.back() == '\n') text.pop_back();
   return text;
 }
+
+// ===== Typed data review (EIP-712) ===== //
+
+#include "../utils/EIP712.h"
+
+static const char PERMIT2_ADDRESS[] = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+static const size_t TYPED_DATA_MAX_TOKENS_SHOWN = 4;
+
+static bool ethToUint64(const uint8_t value[32], uint64_t& out) {
+  if (!isAllZero(value, 24)) return false;
+  out = 0;
+  for (int i = 24; i < 32; i++) out = out << 8 | value[i];
+  return true;
+}
+
+// UTC date of a unix timestamp, "never" when absurdly far away (Permit2 uses max uint48)
+static std::string ethFormatDate(const uint8_t value[32]) {
+  uint64_t t;
+  if (!ethToUint64(value, t) || t >= 253402300800ULL) return "never";  // year 10000
+  // days to civil date, Howard Hinnant's algorithm
+  int64_t days = t / 86400 + 719468;
+  uint32_t secs = t % 86400;
+  int64_t era = days / 146097;
+  uint32_t doe = days - era * 146097;
+  uint32_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  uint32_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  uint32_t mp = (5 * doy + 2) / 153;
+  uint32_t day = doy - (153 * mp + 2) / 5 + 1;
+  uint32_t month = mp < 10 ? mp + 3 : mp - 9;
+  int64_t year = yoe + era * 400 + (month <= 2);
+  char out[32];
+  snprintf(out, sizeof(out), "%04d-%02u-%02u %02u:%02u UTC", (int)year, month, day, secs / 3600, secs / 60 % 60);
+  return out;
+}
+
+// strings from the request may carry line style bytes or newlines to fake parts of the review
+static std::string ethSanitize(const char* str, size_t maxLen = 32) {
+  std::string out;
+  for (const char* c = str ? str : ""; *c && out.size() < maxLen; c++) out += (*c >= 0x20 && *c < 0x7f) ? *c : '?';
+  if (str && strlen(str) > maxLen) out += "...";
+  return out;
+}
+
+// at least 2^160 - 1: the max of Permit2 amounts and anything beyond, nobody owns that many tokens
+static bool ethIsUnlimited(const uint8_t amount[32]) {
+  if (!isAllZero(amount, 12)) return true;
+  for (int i = 12; i < 32; i++) {
+    if (amount[i] != 0xff) return false;
+  }
+  return true;
+}
+
+static std::string ethFormatAllowance(const uint8_t amount[32], const EthTokenInfo* token) {
+  if (ethIsUnlimited(amount)) return std::string("ALL your ") + (token ? token->symbol : "tokens");
+  return ethFormatTokenAmount(amount, token);
+}
+
+// Plain language summary of EIP-712 typed data, like ethFormatTransaction(). Only exact
+// schemas of token permits are recognized, everything else sets `isBlind`.
+// Call after EIP712::computeTypedDataHash() succeeded: values are known to be valid then.
+std::string ethFormatTypedData(JsonDocument& doc, bool* isBlind) {
+  JsonObjectConst types = doc["types"].as<JsonObjectConst>();
+  JsonObjectConst domain = doc["domain"].as<JsonObjectConst>();
+  JsonObjectConst message = doc["message"].as<JsonObjectConst>();
+  const char* primaryType = doc["primaryType"] | "";
+  auto is = [&](const char* type, const char* fields) {
+    return strcmp(primaryType, type) == 0 && EIP712::hasFields(types, type, fields);
+  };
+
+  // domain fields count only if they are part of the signed EIP712Domain type
+  uint64_t chainId = 0;
+  bool hasChain = false, hasContract = false;
+  uint8_t contract[ADDRESS_LENGTH], num[32];
+  for (JsonVariantConst field : types["EIP712Domain"].as<JsonArrayConst>()) {
+    const char* name = field["name"] | "";
+    const char* type = field["type"] | "";
+    if (strcmp(name, "chainId") == 0 && strncmp(type, "uint", 4) == 0) {
+      hasChain = EIP712::readUint(domain[name], num) && ethToUint64(num, chainId);
+    } else if (strcmp(name, "verifyingContract") == 0 && strcmp(type, "address") == 0) {
+      hasContract = EIP712::readAddress(domain[name], contract);
+    }
+  }
+  const EthChainInfo* chain = hasChain ? ethFindChain(chainId) : nullptr;
+  uint8_t permit2[ADDRESS_LENGTH];
+  fromHex(PERMIT2_ADDRESS, permit2, ADDRESS_LENGTH);
+
+  std::string text, alerts;
+  if (isBlind) *isBlind = false;
+  uint8_t spender[ADDRESS_LENGTH], token[ADDRESS_LENGTH], amount[32], deadline[32];
+
+  auto spenderLines = [&](const char* label) {
+    text += std::string(label) + "\n" + ethFormatAddress(spender) + "\n";
+    if (memcmp(spender, permit2, ADDRESS_LENGTH) == 0) text += DISPLAY_LINE_NOTE "Permit2, Uniswap's approval contract\n";
+  };
+
+  bool isDai = is("Permit", "address holder,address spender,uint256 nonce,uint256 expiry,bool allowed");
+  if (hasContract && (isDai || is("Permit", "address owner,address spender,uint256 value,uint256 nonce,uint256 deadline"))) {
+    // ERC-2612 permit, or DAI's older one with an allowed flag and expiry 0 = never
+    const EthTokenInfo* info = hasChain ? ethFindToken(chainId, contract) : nullptr;
+    EIP712::readAddress(message["spender"], spender);
+    if (isDai) {
+      memset(amount, message["allowed"].as<bool>() ? 0xff : 0, 32);
+      EIP712::readUint(message["expiry"], deadline);
+      if (isAllZero(deadline, 32)) memset(deadline, 0xff, 32);
+    } else {
+      EIP712::readUint(message["value"], amount);
+      EIP712::readUint(message["deadline"], deadline);
+    }
+    std::string symbol = info ? info->symbol : "tokens";
+
+    if (isAllZero(amount, 32)) {
+      text += DISPLAY_LINE_TITLE "REMOVE SPENDING PERMISSION\n";
+      spenderLines(("Who can no longer spend your " + symbol + ":").c_str());
+    } else {
+      text += std::string(ethIsUnlimited(amount) ? DISPLAY_LINE_DANGER : DISPLAY_LINE_WARNING) + "ALLOW SPENDING\n";
+      text += DISPLAY_LINE_BIG + ethFormatAllowance(amount, info) + "\n";
+      spenderLines("Who can spend it:");
+      text += "Until: " + ethFormatDate(deadline) + "\n";
+      text += DISPLAY_LINE_NOTE "Signing is free, but they can take it later without asking you. Allow only apps you trust.\n";
+    }
+    if (!info) text += "Token contract:\n" + ethFormatAddress(contract) + "\n";
+
+  } else if (hasContract && EIP712::hasFields(types, "PermitDetails", "address token,uint160 amount,uint48 expiration,uint48 nonce") &&
+             (is("PermitSingle", "PermitDetails details,address spender,uint256 sigDeadline") ||
+              is("PermitBatch", "PermitDetails[] details,address spender,uint256 sigDeadline"))) {
+    // Permit2 allowance for one or more tokens
+    JsonArrayConst list = message["details"].as<JsonArrayConst>();
+    std::vector<JsonVariantConst> details;
+    if (list.isNull()) {
+      details.push_back(message["details"]);
+    } else {
+      for (JsonVariantConst d : list) details.push_back(d);
+    }
+    EIP712::readAddress(message["spender"], spender);
+
+    bool anyUnlimited = false;
+    std::string tokens;
+    for (size_t i = 0; i < details.size() && i < TYPED_DATA_MAX_TOKENS_SHOWN; i++) {
+      EIP712::readAddress(details[i]["token"], token);
+      EIP712::readUint(details[i]["amount"], amount);
+      EIP712::readUint(details[i]["expiration"], deadline);
+      const EthTokenInfo* info = hasChain ? ethFindToken(chainId, token) : nullptr;
+      anyUnlimited |= ethIsUnlimited(amount);
+      tokens += DISPLAY_LINE_BIG + ethFormatAllowance(amount, info) + "\n";
+      if (!info) tokens += "Token contract:\n" + ethFormatAddress(token) + "\n";
+      tokens += "Until: " + ethFormatDate(deadline) + "\n";
+    }
+    text += std::string(anyUnlimited ? DISPLAY_LINE_DANGER : DISPLAY_LINE_WARNING) + "ALLOW SPENDING\n" + tokens;
+    if (details.size() > TYPED_DATA_MAX_TOKENS_SHOWN) {
+      alerts += DISPLAY_LINE_ALERT "And " + std::to_string(details.size() - TYPED_DATA_MAX_TOKENS_SHOWN) +
+          " more tokens not shown!\n";
+    }
+    spenderLines("Who can spend it:");
+    text += DISPLAY_LINE_NOTE "Signing is free, but they can take it later without asking you. Allow only apps you trust.\n";
+    if (memcmp(contract, permit2, ADDRESS_LENGTH) != 0) alerts += DISPLAY_LINE_ALERT "Not the real Permit2 contract!\n";
+
+  } else if (hasContract && EIP712::hasFields(types, "TokenPermissions", "address token,uint256 amount") &&
+             (is("PermitTransferFrom", "TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline") ||
+              is("PermitBatchTransferFrom", "TokenPermissions[] permitted,address spender,uint256 nonce,uint256 deadline"))) {
+    // Permit2 one-time transfer
+    JsonArrayConst list = message["permitted"].as<JsonArrayConst>();
+    std::vector<JsonVariantConst> permitted;
+    if (list.isNull()) {
+      permitted.push_back(message["permitted"]);
+    } else {
+      for (JsonVariantConst p : list) permitted.push_back(p);
+    }
+    EIP712::readAddress(message["spender"], spender);
+    EIP712::readUint(message["deadline"], deadline);
+
+    text += DISPLAY_LINE_WARNING "ALLOW ONE TRANSFER\n";
+    for (size_t i = 0; i < permitted.size() && i < TYPED_DATA_MAX_TOKENS_SHOWN; i++) {
+      EIP712::readAddress(permitted[i]["token"], token);
+      EIP712::readUint(permitted[i]["amount"], amount);
+      const EthTokenInfo* info = hasChain ? ethFindToken(chainId, token) : nullptr;
+      text += DISPLAY_LINE_BIG + ethFormatAllowance(amount, info) + "\n";
+      if (!info) text += "Token contract:\n" + ethFormatAddress(token) + "\n";
+    }
+    if (permitted.size() > TYPED_DATA_MAX_TOKENS_SHOWN) {
+      alerts += DISPLAY_LINE_ALERT "And " + std::to_string(permitted.size() - TYPED_DATA_MAX_TOKENS_SHOWN) +
+          " more tokens not shown!\n";
+    }
+    spenderLines("Who can take it:");
+    text += "Until: " + ethFormatDate(deadline) + "\n";
+    text += DISPLAY_LINE_NOTE "They can take this once, without asking you again.\n";
+    if (memcmp(contract, permit2, ADDRESS_LENGTH) != 0) alerts += DISPLAY_LINE_ALERT "Not the real Permit2 contract!\n";
+
+  } else {
+    if (isBlind) *isBlind = true;
+    text += DISPLAY_LINE_WARNING "SIGN DATA\n";
+    text += DISPLAY_LINE_NOTE "This device can't read what it allows. Sign only if you trust the app.\n";
+    text += "App: " + ethSanitize(domain["name"] | "?") + "\n";
+    text += "Type: " + ethSanitize(primaryType) + "\n";
+    if (hasContract) text += "Contract:\n" + ethFormatAddress(contract) + "\n";
+  }
+
+  text += "\nNetwork: ";
+  if (!hasChain) {
+    text += "any\n";
+    alerts += DISPLAY_LINE_ALERT "Valid on every network!\n";
+  } else {
+    text += chain ? chain->name : "unknown (ID " + std::to_string(chainId) + ")";
+    text += "\n";
+    if (chain && chain->isTestnet) text += DISPLAY_LINE_NOTE "Test network, no real money\n";
+    if (!chain) alerts += DISPLAY_LINE_ALERT "Unknown network: check it in your app\n";
+  }
+
+  if (!alerts.empty()) text += "\n" + alerts;
+  while (!text.empty() && text.back() == '\n') text.pop_back();
+  return text;
+}

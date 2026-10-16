@@ -370,3 +370,25 @@ bool EIP712::computeTypedDataHash(JsonDocument& doc, uint8_t out[32]) {
   keccak(buffer, sizeof(buffer), out);
   return true;
 }
+
+bool EIP712::readUint(JsonVariantConst value, uint8_t out[32]) { return encodeInteger(value, 256, false, out); }
+
+bool EIP712::readAddress(JsonVariantConst value, uint8_t out[20]) {
+  std::vector<uint8_t> bytes;
+  if (!decodeHex(value.as<const char*>(), bytes, 20) || bytes.size() != 20) return false;
+  memcpy(out, bytes.data(), 20);
+  return true;
+}
+
+bool EIP712::hasFields(JsonObjectConst types, const char* name, const char* fields) {
+  JsonArrayConst list;
+  if (!structFields(types, name, list)) return false;
+  std::string encoded;
+  for (JsonVariantConst field : list) {
+    if (!encoded.empty()) encoded += ",";
+    encoded += field["type"].as<const char*>();
+    encoded += " ";
+    encoded += field["name"].as<const char*>();
+  }
+  return encoded == fields;
+}

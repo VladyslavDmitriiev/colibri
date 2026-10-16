@@ -699,16 +699,17 @@ WalletResponse Wallet::urSign(UR& ur) {
             return WalletResponse(ParseError, RPC_ERROR_DECODING);
           }
 
-          // display details for user approval
-          // TODO: show typed data in plain language, until then it's blind signing
-          if (!BLIND_SIGNING_ENABLED) return rejectBlindSigning();
-          if (!waitForApproval(DISPLAY_APPROVE_SIGN_TYPED_DATA))
-            return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
-
           if (!EIP712::computeTypedDataHash(typedDataJson, hash)) {
             log_e("Invalid or unsupported typed data");
             return WalletResponse(InvalidParams, RPC_ERROR_DECODING);
           }
+
+          // display details for user approval
+          bool isBlind;
+          std::string review = ethFormatTypedData(typedDataJson, &isBlind);
+          if (isBlind && !BLIND_SIGNING_ENABLED) return rejectBlindSigning();
+          if (!waitForApproval(review.c_str())) return WalletResponse(UserRejected, RPC_ERROR_USER_REJECTED);
+
           uint8_t sigBytes[RECOVERABLE_SIGNATURE_LENGTH];
           ethSignRecoverableDigest(&hdNode, hash, sigBytes);
           std::string sig = getUrEthSignature(sigBytes, request.id);

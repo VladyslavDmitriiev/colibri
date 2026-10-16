@@ -24,4 +24,10 @@ class EIP712 {
   // keccak256(0x1901 ‖ hashStruct(domain) ‖ hashStruct(message)) of eth_signTypedData_v4 JSON.
   // False for malformed or unsupported typed data, never sign `out` then.
   static bool computeTypedDataHash(JsonDocument& doc, uint8_t out[32]);
+
+  // values parsed exactly like the hash does, for showing them to the user
+  static bool readUint(JsonVariantConst value, uint8_t out[32]);
+  static bool readAddress(JsonVariantConst value, uint8_t out[20]);
+  // true if struct `name` has exactly these fields, `fields` is "type name,type name,..."
+  static bool hasFields(JsonObjectConst types, const char* name, const char* fields);
 };
