@@ -46,8 +46,8 @@
 #define TOUCH_GPIO_I2C_SDA BOARD_GPIO_I2C_SDA
 #define TOUCH_GPIO_I2C_SCL BOARD_GPIO_I2C_SCL
 // raw x the panel reports at the left and right display edge, fitted from finger taps aimed at key centres
-#define TOUCH_RAW_X_MIN -19
-#define TOUCH_RAW_X_MAX 332
+#define TOUCH_RAW_X_MIN -25
+#define TOUCH_RAW_X_MAX 341
 
 // Onboard OV5640 camera config
 #define CAMERA_ENABLED
