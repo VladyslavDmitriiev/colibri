@@ -17,8 +17,25 @@ struct TextLine {
 
 static bool isLineStyle(char c) { return c >= DISPLAY_LINE_TITLE[0] && c <= DISPLAY_LINE_ALERT[0]; }
 
-static float lineTextSize(char style, float baseSize) {
-  return style == DISPLAY_LINE_BIG[0] ? baseSize * 1.5f : baseSize;
+// monospace fonts from big to small, tried until the text fits
+struct TextTier {
+  const lgfx::IFont* font;
+  float size;
+  float bigSize;  // DISPLAY_LINE_BIG
+};
+
+#ifndef DISPLAY_SMALL
+static const TextTier textTiers[] = {
+    {&fonts::Font0, 2.0f, 3.0f},  // 12x16 px chars
+    {&fonts::AsciiFont8x16, 1.0f, 2.0f},
+    {&fonts::Font0, 1.0f, 2.0f},  // 6x8 px chars
+};
+#else
+static const TextTier textTiers[] = {{&fonts::Font0, 1.0f, 1.5f}};
+#endif
+
+static float lineTextSize(char style, const TextTier& tier) {
+  return style == DISPLAY_LINE_BIG[0] ? tier.bigSize : tier.size;
 }
 
 static uint16_t lineColor(char style) {
@@ -34,7 +51,7 @@ static uint16_t lineColor(char style) {
 
 // Splits text at newlines, takes the style prefix of each line and wraps lines wider
 // than the frame, at the last space if there is one
-static std::vector<TextLine> layoutText(LovyanGFX& gfx, const char* message, float baseSize, int32_t maxWidth) {
+static std::vector<TextLine> layoutText(LovyanGFX& gfx, const char* message, const TextTier& tier, int32_t maxWidth) {
   std::vector<TextLine> lines;
   const char* c = message;
   while (true) {
@@ -43,7 +60,7 @@ static std::vector<TextLine> layoutText(LovyanGFX& gfx, const char* message, flo
     char style = (!raw.empty() && isLineStyle(raw[0])) ? raw[0] : 0;
     if (style) raw.erase(0, 1);
 
-    gfx.setTextSize(lineTextSize(style, baseSize));
+    gfx.setTextSize(lineTextSize(style, tier));
     size_t maxChars = maxWidth / gfx.textWidth("0");
     if (maxChars < 1) maxChars = 1;
     do {
@@ -64,38 +81,35 @@ static std::vector<TextLine> layoutText(LovyanGFX& gfx, const char* message, flo
 }
 
 // line pitch with spacing, so multi-line text stays readable
-static int32_t lineHeight(LovyanGFX& gfx, const TextLine& line, float baseSize) {
-  gfx.setTextSize(lineTextSize(line.style, baseSize));
+static int32_t lineHeight(LovyanGFX& gfx, const TextLine& line, const TextTier& tier) {
+  gfx.setTextSize(lineTextSize(line.style, tier));
   return gfx.fontHeight() * 3 / 2;
 }
 
 // Centered text, multiple lines separated by `\n`, each optionally styled by a DISPLAY_LINE_*
-// prefix. Long lines wrap, and the text falls back to the small font size if it doesn't fit.
+// prefix. Long lines wrap, and the text falls back to smaller fonts if it doesn't fit.
 // renders on the panel or, for screenshots, on a sprite
 static void renderText(LovyanGFX& gfx, const char* message) {
   gfx.fillScreen(DISPLAY_COLOR_BG);
-  gfx.setFont(&fonts::Font0);
-
-  float baseSize = 1.0f;
-  #ifndef DISPLAY_SMALL
-  baseSize = 2.0f;
-  #endif
 
   const int32_t padding = 10;
+  const size_t tierCount = sizeof(textTiers) / sizeof(textTiers[0]);
+  const TextTier* tier = nullptr;
   std::vector<TextLine> lines;
   int32_t totalHeight;
-  while (true) {
-    lines = layoutText(gfx, message, baseSize, gfx.width() - 2 * padding);
+  for (size_t i = 0; i < tierCount; i++) {
+    tier = &textTiers[i];
+    gfx.setFont(tier->font);
+    lines = layoutText(gfx, message, *tier, gfx.width() - 2 * padding);
     totalHeight = 0;
-    for (const TextLine& line : lines) totalHeight += lineHeight(gfx, line, baseSize);
-    if (baseSize <= 1.0f || totalHeight <= gfx.height() - 2 * padding) break;
-    baseSize = 1.0f;
+    for (const TextLine& line : lines) totalHeight += lineHeight(gfx, line, *tier);
+    if (totalHeight <= gfx.height() - 2 * padding) break;
   }
 
   int32_t y = (gfx.height() - totalHeight) / 2;
   gfx.setTextDatum(middle_center);
   for (const TextLine& line : lines) {
-    int32_t h = lineHeight(gfx, line, baseSize);
+    int32_t h = lineHeight(gfx, line, *tier);
     gfx.setTextColor(lineColor(line.style));
     gfx.drawString(line.text.c_str(), gfx.width() / 2, y + h / 2);
     y += h;
