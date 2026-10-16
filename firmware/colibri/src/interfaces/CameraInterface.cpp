@@ -3,6 +3,8 @@
 
 #include "CameraInterface.h"
 
+#include <cstring>
+
 #if defined(CAMERA_ENABLED)
 
 esp_err_t camera_init() {
@@ -231,8 +233,11 @@ void CameraInterface::handleUr(UR& ur) {
 
   if (r.status < Ok) {
     log_e("UR signing failed: %s", r.error);
-    displayMessage(r.status == UserRejected ? DISPLAY_REJECTED : DISPLAY_ERROR);
-    delay(1000);
+    // the blind signing notice was already shown and dismissed
+    if (!r.error || strcmp(r.error, RPC_ERROR_BLIND_SIGNING) != 0) {
+      displayMessage(r.status == UserRejected ? DISPLAY_REJECTED : DISPLAY_ERROR);
+      delay(1000);
+    }
     showIdle();
     return;
   }
