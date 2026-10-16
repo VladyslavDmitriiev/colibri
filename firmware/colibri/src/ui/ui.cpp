@@ -270,14 +270,34 @@ bool readText(const char* title, std::string& text, bool secret) {
   bool reveal = !secret;
   bool done = false;
   uint64_t lastActivity = millis();
-  auto redraw = [&]() { drawKeyboard(title, reveal ? text : std::string(text.size(), '*'), layout); };
+  int pressed = -1;
+  auto redraw = [&]() { drawKeyboard(title, reveal ? text : std::string(text.size(), '*'), layout, pressed); };
   redraw();
 
+  // the key under the finger lights up and is typed when the finger lifts,
+  // so a finger that landed on the wrong key can slide to the right one
   int16_t x, y;
-  while (waitForTap(x, y, lastActivity)) {
+  while (millis() - lastActivity < TIMEOUT_TOUCH_INPUT) {
+    updateUi();
+    if (buttonOk.isShortPressed()) break;
+    TouchState state = touchRead(x, y);
+    if (state == TouchUp) {
+      delay(10);
+      continue;
+    }
+    lastActivity = millis();
+    if (state == TouchDown) {
+      int under = keyboardKeyAt(layout, x, y);
+      if (under != pressed) {
+        pressed = under;
+        redraw();
+      }
+      delay(10);
+      continue;
+    }
+    pressed = -1;
     char ch = 0;
     KeyAction action = keyboardHit(layout, x, y, ch);
-    if (action == KeyNone) continue;
     if (action == KeyDone) {
       done = true;
       break;
@@ -300,6 +320,7 @@ bool readText(const char* title, std::string& text, bool secret) {
     }
     redraw();
   }
+  closeKeyboard();
 
   if (!done) {
     memzero((void*)text.data(), text.size());

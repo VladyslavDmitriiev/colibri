@@ -6,6 +6,10 @@
 #include <functional>
 #include <vector>
 
+extern "C" {
+#include <memzero.h>
+}
+
 #ifdef DISPLAY_ENABLED
 
 static TFT_eSPI display;
@@ -253,7 +257,9 @@ static void keyboardKeys(uint8_t layout, std::vector<KeyboardKey>& keys) {
   keys.push_back({unit * 8, y, width - unit * 8, KEY_ROW_HEIGHT, "OK", 0, KeyDone});
 }
 
-static void renderKeyboard(LovyanGFX& gfx, const std::string& title, const std::string& shown, uint8_t layout) {
+static void renderKeyboard(
+    LovyanGFX& gfx, const std::string& title, const std::string& shown, uint8_t layout, int pressed
+) {
   gfx.fillScreen(DISPLAY_COLOR_BG);
   gfx.setFont(&fonts::AsciiFont8x16);
   gfx.setTextSize(1);
@@ -276,10 +282,15 @@ static void renderKeyboard(LovyanGFX& gfx, const std::string& title, const std::
   std::vector<KeyboardKey> keys;
   keyboardKeys(layout, keys);
   gfx.setTextDatum(middle_center);
-  for (const KeyboardKey& k : keys) {
+  for (size_t i = 0; i < keys.size(); i++) {
+    const KeyboardKey& k = keys[i];
     uint16_t frame = k.action == KeyDone ? TFT_GREEN : (k.action == KeyChar ? TFT_DARKGREY : TFT_LIGHTGREY);
-    gfx.drawRoundRect(k.x + 2, k.y + 2, k.w - 4, k.h - 4, 6, frame);
-    gfx.setTextColor(k.action == KeyDone ? TFT_GREEN : TFT_WHITE);
+    if ((int)i == pressed) {
+      gfx.fillRoundRect(k.x + 2, k.y + 2, k.w - 4, k.h - 4, 6, frame);
+    } else {
+      gfx.drawRoundRect(k.x + 2, k.y + 2, k.w - 4, k.h - 4, 6, frame);
+    }
+    gfx.setTextColor((int)i == pressed ? DISPLAY_COLOR_BG : (k.action == KeyDone ? TFT_GREEN : TFT_WHITE));
     gfx.setTextSize(k.label ? 1 : 2);
     if (k.label) {
       gfx.drawString(k.label, k.x + k.w / 2, k.y + k.h / 2);
@@ -290,27 +301,88 @@ static void renderKeyboard(LovyanGFX& gfx, const std::string& title, const std::
   }
 }
 
-void drawKeyboard(const char* title, const std::string& shown, uint8_t layout) {
+// Every keystroke used to clear and redraw the panel, which flickered. Frames are drawn on a
+// PSRAM sprite instead and only the rows that changed since the last frame are sent.
+static LGFX_Sprite* keyboardFrame = nullptr;
+static LGFX_Sprite* keyboardShown = nullptr;
+
+static void freeKeyboardSprite(LGFX_Sprite*& sprite) {
+  if (!sprite) return;
+  if (sprite->getBuffer()) memzero(sprite->getBuffer(), sprite->bufferLength());  // may show a passphrase
+  sprite->deleteSprite();
+  delete sprite;
+  sprite = nullptr;
+}
+
+static LGFX_Sprite* newKeyboardSprite() {
+  LGFX_Sprite* sprite = new LGFX_Sprite(&display);
+  sprite->setPsram(true);
+  sprite->setColorDepth(16);
+  if (!sprite->createSprite(display.width(), display.height())) {
+    delete sprite;
+    return nullptr;
+  }
+  return sprite;
+}
+
+void drawKeyboard(const char* title, const std::string& shown, uint8_t layout, int pressed) {
   #ifdef DEBUG_REMOTE_CONTROL
   std::string t = title;
-  lastScreen = [t, shown, layout](LovyanGFX& gfx) { renderKeyboard(gfx, t, shown, layout); };
+  lastScreen = [t, shown, layout, pressed](LovyanGFX& gfx) { renderKeyboard(gfx, t, shown, layout, pressed); };
   #endif
+  if (!keyboardFrame) keyboardFrame = newKeyboardSprite();
+  if (keyboardFrame && !keyboardShown) {
+    keyboardShown = newKeyboardSprite();
+    if (keyboardShown) keyboardShown->fillScreen((uint16_t)~DISPLAY_COLOR_BG);  // differs everywhere: first frame goes out whole
+  }
+  if (!keyboardFrame || !keyboardShown) {
+    // no PSRAM: draw straight to the panel
+    freeKeyboardSprite(keyboardFrame);
+    freeKeyboardSprite(keyboardShown);
+    display.startWrite();
+    renderKeyboard(display, title, shown, layout, pressed);
+    display.endWrite();
+    return;
+  }
+
+  renderKeyboard(*keyboardFrame, title, shown, layout, pressed);
+  const int32_t width = keyboardFrame->width(), height = keyboardFrame->height();
+  const uint16_t* next = (const uint16_t*)keyboardFrame->getBuffer();
+  const uint16_t* prev = (const uint16_t*)keyboardShown->getBuffer();
+  int32_t first = 0, last = height - 1;
+  while (first < height && memcmp(next + first * width, prev + first * width, width * 2) == 0) first++;
+  if (first == height) return;
+  while (last > first && memcmp(next + last * width, prev + last * width, width * 2) == 0) last--;
+
   display.startWrite();
-  renderKeyboard(display, title, shown, layout);
+  display.pushImage(0, first, width, last - first + 1, (const lgfx::swap565_t*)(next + first * width));
   display.endWrite();
+  std::swap(keyboardFrame, keyboardShown);
+}
+
+void closeKeyboard() {
+  freeKeyboardSprite(keyboardFrame);
+  freeKeyboardSprite(keyboardShown);
+}
+
+int keyboardKeyAt(uint8_t layout, int16_t x, int16_t y) {
+  std::vector<KeyboardKey> keys;
+  keyboardKeys(layout, keys);
+  for (size_t i = 0; i < keys.size(); i++) {
+    const KeyboardKey& k = keys[i];
+    if (x >= k.x && x < k.x + k.w && y >= k.y && y < k.y + k.h) return i;
+  }
+  return -1;
 }
 
 KeyAction keyboardHit(uint8_t layout, int16_t x, int16_t y, char& ch) {
   if (y >= 48 && y < 48 + 40 + 24) return KeyToggleShow;
+  int i = keyboardKeyAt(layout, x, y);
+  if (i < 0) return KeyNone;
   std::vector<KeyboardKey> keys;
   keyboardKeys(layout, keys);
-  for (const KeyboardKey& k : keys) {
-    if (x >= k.x && x < k.x + k.w && y >= k.y && y < k.y + k.h) {
-      ch = k.ch;
-      return k.action;
-    }
-  }
-  return KeyNone;
+  ch = keys[i].ch;
+  return keys[i].action;
 }
 
 static const int32_t MENU_TOP = 90, MENU_ITEM_HEIGHT = 64;

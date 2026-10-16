@@ -10,7 +10,11 @@
 
 void touchBegin();
 void touchEnd();
-// true once per press, with the point in display coordinates
+enum TouchState { TouchUp, TouchDown, TouchReleased };
+// TouchDown while a finger is on the panel, TouchReleased once when it lifts.
+// x, y: the latest point in display coordinates, for TouchReleased the last one before lifting.
+TouchState touchRead(int16_t& x, int16_t& y);
+// true once per press, when the finger lifts
 bool touchTapped(int16_t& x, int16_t& y);
 
   #ifdef DEBUG_REMOTE_CONTROL
