@@ -70,7 +70,8 @@ void setup() {
   // enable Serial when debugging
 #if (CORE_DEBUG_LEVEL > 0)
   Serial.begin(BOARD_SERIAL_BAUD_RATE);
-  while (!Serial) {
+  // USB CDC is only "ready" once a host opens the port; don't hang without one
+  while (!Serial && millis() < 3000) {
     delay(20);
   }
   Serial.setDebugOutput(true);
