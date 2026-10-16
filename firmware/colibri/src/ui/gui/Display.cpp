@@ -3,6 +3,7 @@
 
 #include "Display.h"
 
+#include <functional>
 #include <vector>
 
 #ifdef DISPLAY_ENABLED
@@ -119,12 +120,14 @@ static void renderText(LovyanGFX& gfx, const char* message) {
 }
 
 #ifdef DEBUG_REMOTE_CONTROL
-static std::string lastText;  // text screen on the panel, empty while it shows something else
+// draws the screen on the panel again, for screenshots; empty while it shows a camera frame or a QR code
+static std::function<void(LovyanGFX&)> lastScreen;
 #endif
 
 void drawText(const char* message) {
 #ifdef DEBUG_REMOTE_CONTROL
-  lastText = message;
+  std::string text = message;
+  lastScreen = [text](LovyanGFX& gfx) { renderText(gfx, text.c_str()); };
 #endif
   display.startWrite();
   display.clearDisplay();
@@ -147,7 +150,7 @@ void initDisplay() {
 // Downscaled grayscale camera frame at the top, a status line below, for aiming at QR codes
 void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const char* status) {
 #ifdef DEBUG_REMOTE_CONTROL
-  lastText.clear();
+  lastScreen = nullptr;
 #endif
   size_t step = (width + display.width() - 1) / display.width();
   if (step < 1) step = 1;
@@ -187,7 +190,7 @@ void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const c
 
 void drawQrCode(esp_qrcode_handle_t qrCode) {
 #ifdef DEBUG_REMOTE_CONTROL
-  lastText.clear();
+  lastScreen = nullptr;
 #endif
   #ifndef DISPLAY_SMALL
 
@@ -212,11 +215,153 @@ void drawQrCode(esp_qrcode_handle_t qrCode) {
   #endif
 }
 
+
+// ===== Touch screens ===== //
+
+static const int32_t KEY_ROW_HEIGHT = 50;
+static const int32_t KEYBOARD_TOP = DISPLAY_HEIGHT - 5 * KEY_ROW_HEIGHT - 8;
+
+static void keyboardKeys(uint8_t layout, std::vector<KeyboardKey>& keys) {
+  static const char* const rows[3][4] = {
+      {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"},
+      {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
+      {"!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/?", "`~"},
+  };
+  keys.clear();
+  const int32_t width = DISPLAY_WIDTH;
+  for (int row = 0; row < 4; row++) {
+    const char* chars = rows[layout][row];
+    int32_t count = strlen(chars);
+    int32_t keyWidth = width / 10;
+    int32_t x = (width - count * keyWidth) / 2;
+    int32_t y = KEYBOARD_TOP + row * KEY_ROW_HEIGHT;
+    if (row == 3) {
+      // shift / symbols toggle left, backspace right
+      keys.push_back({0, y, keyWidth * 3 / 2, KEY_ROW_HEIGHT, layout == 2 ? "ABC" : (layout == 1 ? "abc" : "Shift"),
+                      0, layout == 2 ? KeyLetters : KeyShift});
+      keys.push_back({width - keyWidth * 3 / 2, y, keyWidth * 3 / 2, KEY_ROW_HEIGHT, "Del", 0, KeyBackspace});
+    }
+    for (int32_t i = 0; i < count; i++) {
+      keys.push_back({x + i * keyWidth, y, keyWidth, KEY_ROW_HEIGHT, nullptr, chars[i], KeyChar});
+    }
+  }
+  int32_t y = KEYBOARD_TOP + 4 * KEY_ROW_HEIGHT;
+  int32_t unit = width / 10;
+  keys.push_back({0, y, unit * 2, KEY_ROW_HEIGHT, layout == 2 ? "abc" : "#+=", 0, layout == 2 ? KeyLetters : KeySymbols});
+  keys.push_back({unit * 2, y, unit * 4, KEY_ROW_HEIGHT, "space", ' ', KeyChar});
+  keys.push_back({unit * 6, y, unit * 2, KEY_ROW_HEIGHT, "Back", 0, KeyCancel});
+  keys.push_back({unit * 8, y, width - unit * 8, KEY_ROW_HEIGHT, "OK", 0, KeyDone});
+}
+
+static void renderKeyboard(LovyanGFX& gfx, const std::string& title, const std::string& shown, uint8_t layout) {
+  gfx.fillScreen(DISPLAY_COLOR_BG);
+  gfx.setFont(&fonts::AsciiFont8x16);
+  gfx.setTextSize(1);
+  gfx.setTextDatum(top_center);
+  gfx.setTextColor(TFT_WHITE);
+  gfx.drawString(title.c_str(), gfx.width() / 2, 16);
+
+  // input field, scrolled to the end
+  const int32_t fieldY = 48, fieldH = 40;
+  gfx.drawRect(8, fieldY, gfx.width() - 16, fieldH, DISPLAY_COLOR_TEXT);
+  size_t maxChars = (gfx.width() - 32) / gfx.textWidth("0");
+  std::string visible = shown.size() > maxChars ? shown.substr(shown.size() - maxChars) : shown;
+  gfx.setTextDatum(middle_left);
+  gfx.setTextColor(DISPLAY_COLOR_TEXT);
+  gfx.drawString((visible + "_").c_str(), 16, fieldY + fieldH / 2);
+  gfx.setTextDatum(top_center);
+  gfx.setTextColor(TFT_LIGHTGREY);
+  gfx.drawString("Tap the field to show or hide", gfx.width() / 2, fieldY + fieldH + 8);
+
+  std::vector<KeyboardKey> keys;
+  keyboardKeys(layout, keys);
+  gfx.setTextDatum(middle_center);
+  for (const KeyboardKey& k : keys) {
+    uint16_t frame = k.action == KeyDone ? TFT_GREEN : (k.action == KeyChar ? TFT_DARKGREY : TFT_LIGHTGREY);
+    gfx.drawRoundRect(k.x + 2, k.y + 2, k.w - 4, k.h - 4, 6, frame);
+    gfx.setTextColor(k.action == KeyDone ? TFT_GREEN : TFT_WHITE);
+    gfx.setTextSize(k.label ? 1 : 2);
+    if (k.label) {
+      gfx.drawString(k.label, k.x + k.w / 2, k.y + k.h / 2);
+    } else {
+      char label[2] = {k.ch, 0};
+      gfx.drawString(label, k.x + k.w / 2, k.y + k.h / 2);
+    }
+  }
+}
+
+void drawKeyboard(const char* title, const std::string& shown, uint8_t layout) {
+  #ifdef DEBUG_REMOTE_CONTROL
+  std::string t = title;
+  lastScreen = [t, shown, layout](LovyanGFX& gfx) { renderKeyboard(gfx, t, shown, layout); };
+  #endif
+  display.startWrite();
+  renderKeyboard(display, title, shown, layout);
+  display.endWrite();
+}
+
+KeyAction keyboardHit(uint8_t layout, int16_t x, int16_t y, char& ch) {
+  if (y >= 48 && y < 48 + 40 + 24) return KeyToggleShow;
+  std::vector<KeyboardKey> keys;
+  keyboardKeys(layout, keys);
+  for (const KeyboardKey& k : keys) {
+    if (x >= k.x && x < k.x + k.w && y >= k.y && y < k.y + k.h) {
+      ch = k.ch;
+      return k.action;
+    }
+  }
+  return KeyNone;
+}
+
+static const int32_t MENU_TOP = 90, MENU_ITEM_HEIGHT = 64;
+
+static void renderMenu(LovyanGFX& gfx, const std::string& title, const std::vector<std::string>& options) {
+  gfx.fillScreen(DISPLAY_COLOR_BG);
+  gfx.setFont(&fonts::AsciiFont8x16);
+  gfx.setTextSize(1);
+  gfx.setTextDatum(top_center);
+  gfx.setTextColor(TFT_WHITE);
+  // title may span lines
+  int32_t y = 20;
+  size_t start = 0;
+  while (start <= title.size()) {
+    size_t end = title.find('\n', start);
+    if (end == std::string::npos) end = title.size();
+    gfx.drawString(title.substr(start, end - start).c_str(), gfx.width() / 2, y);
+    y += 20;
+    start = end + 1;
+  }
+  gfx.setTextDatum(middle_center);
+  gfx.setTextSize(2);
+  for (size_t i = 0; i < options.size(); i++) {
+    int32_t top = MENU_TOP + i * MENU_ITEM_HEIGHT;
+    gfx.drawRoundRect(16, top + 4, gfx.width() - 32, MENU_ITEM_HEIGHT - 8, 8, DISPLAY_COLOR_TEXT);
+    gfx.setTextColor(DISPLAY_COLOR_TEXT);
+    gfx.drawString(options[i].c_str(), gfx.width() / 2, top + MENU_ITEM_HEIGHT / 2);
+  }
+}
+
+void drawMenu(const char* title, const std::vector<std::string>& options) {
+  #ifdef DEBUG_REMOTE_CONTROL
+  std::string t = title;
+  lastScreen = [t, options](LovyanGFX& gfx) { renderMenu(gfx, t, options); };
+  #endif
+  display.startWrite();
+  renderMenu(display, title, options);
+  display.endWrite();
+}
+
+int menuHit(size_t count, int16_t x, int16_t y) {
+  if (x < 16 || x >= DISPLAY_WIDTH - 16 || y < MENU_TOP) return -1;
+  size_t i = (y - MENU_TOP) / MENU_ITEM_HEIGHT;
+  return i < count ? (int)i : -1;
+}
+
 #ifdef DEBUG_REMOTE_CONTROL
-// last text screen as raw RGB565 (little endian) after a "SHOT_BEGIN w h bytes" line, read by ctl.py.
-// The panel can't be read back (no MISO on some boards), so the text is drawn again on a PSRAM sprite.
+// last text or touch screen as raw RGB565 (little endian) after a "SHOT_BEGIN w h bytes" line, read by ctl.py.
+// The panel can't be read back (no MISO on some boards), so the screen is drawn again on a PSRAM sprite.
 void dumpDisplay() {
-  if (lastText.empty()) {
+  if (!lastScreen) {
     Serial.println("SHOT_NONE no text screen shown");
     return;
   }
@@ -227,7 +372,7 @@ void dumpDisplay() {
     Serial.println("SHOT_NONE sprite allocation failed");
     return;
   }
-  renderText(sprite, lastText.c_str());
+  lastScreen(sprite);
   int32_t w = sprite.width(), h = sprite.height();
   Serial.printf("SHOT_BEGIN %d %d %d\n", w, h, w * h * 2);
   for (int32_t y = 0; y < h; y++) {

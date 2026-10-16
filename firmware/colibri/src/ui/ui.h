@@ -11,6 +11,7 @@
 #include "./gui/Display.h"
 #include "AsyncButton.h"
 #include "AsyncLed.h"
+#include "Touch.h"
 
 extern AsyncButton buttonOk;
 #ifdef BUTTON_LAYOUT_MAIN_TWO
@@ -34,6 +35,12 @@ void debugRemoteCommand(const std::string& cmd);
 bool waitForApproval(const char* text, RgbColor color = Hot);
 
 void waitForDismiss(const char* text);
+#ifdef TOUCH_ENABLED
+// touch keyboard, false if the user went back or didn't type for a while
+bool readText(const char* title, std::string& text, bool secret = true);
+// buttons, index of the chosen option or -1
+int chooseOption(const char* title, const std::vector<std::string>& options);
+#endif
 
 void setStateConnected(Connection conn);
 

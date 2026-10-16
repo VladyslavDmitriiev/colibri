@@ -29,7 +29,7 @@ void SerialDebugInterface::update() {
         while (millis() - startTime < 500) {
           int next = Serial.read();
           if (next < 0) continue;
-          if (next == '\n' || next == '\r' || cmd.size() >= 32) break;
+          if (next == '\n' || next == '\r' || cmd.size() >= 256) break;
           cmd += (char)next;
         }
         debugRemoteCommand(cmd);

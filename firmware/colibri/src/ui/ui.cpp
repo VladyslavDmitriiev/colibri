@@ -3,6 +3,7 @@
 
 #include "ui.h"
 
+#include "../core/SdCard.h"
 #include "../core/Wallet.h"
 extern Wallet wallet;
 
@@ -77,7 +78,7 @@ static void updateLed() {
 
 #ifdef DEBUG_REMOTE_CONTROL
 // serial commands to drive the device from a computer, debug builds only:
-// !ok, !ok2 (double click), !cancel, !long, !shot (screenshot)
+// !ok, !ok2 (double click), !cancel, !long, !shot (screenshot), !tap X Y
 void debugRemoteCommand(const std::string& cmd) {
   log_i("Debug remote command: %s", cmd.c_str());
   if (cmd == "!ok") {
@@ -95,6 +96,15 @@ void debugRemoteCommand(const std::string& cmd) {
     buttonOk.simulateLongPress();
   } else if (cmd == "!shot") {
     dumpDisplay();
+  #ifdef SD_CARD_ENABLED
+  } else if (cmd.rfind("!sd", 0) == 0) {
+    sdDebugCommand(cmd);
+  #endif
+  #ifdef TOUCH_ENABLED
+  } else if (cmd.rfind("!tap ", 0) == 0) {
+    int x = 0, y = 0;
+    if (sscanf(cmd.c_str() + 5, "%d %d", &x, &y) == 2) touchSimulateTap(x, y);
+  #endif
   }
 }
 
@@ -107,7 +117,7 @@ static void debugRemotePoll() {
     if (c == '\n' || c == '\r') {
       if (!line.empty() && line[0] == '!') debugRemoteCommand(line);
       line.clear();
-    } else if (line.size() < 32) {
+    } else if (line.size() < 256) {
       line += c;
     }
   }
@@ -236,6 +246,87 @@ void waitForDismiss(const char* text) {
   buttonOk.reset();
   buttonCancel.reset();
 }
+
+#ifdef TOUCH_ENABLED
+// blocking touch input; false on Back, the button, or after TIMEOUT_TOUCH_INPUT without a tap
+static bool waitForTap(int16_t& x, int16_t& y, uint64_t& lastActivity) {
+  while (millis() - lastActivity < TIMEOUT_TOUCH_INPUT) {
+    updateUi();
+    if (buttonOk.isShortPressed()) return false;
+    if (touchTapped(x, y)) {
+      lastActivity = millis();
+      return true;
+    }
+    delay(10);
+  }
+  return false;
+}
+
+bool readText(const char* title, std::string& text, bool secret) {
+  bool wasHot = isHot;
+  isHot = true;
+  buttonOk.reset();
+  uint8_t layout = 0;
+  bool reveal = !secret;
+  bool done = false;
+  uint64_t lastActivity = millis();
+  auto redraw = [&]() { drawKeyboard(title, reveal ? text : std::string(text.size(), '*'), layout); };
+  redraw();
+
+  int16_t x, y;
+  while (waitForTap(x, y, lastActivity)) {
+    char ch = 0;
+    KeyAction action = keyboardHit(layout, x, y, ch);
+    if (action == KeyNone) continue;
+    if (action == KeyDone) {
+      done = true;
+      break;
+    }
+    if (action == KeyCancel) break;
+    if (action == KeyChar && text.size() < TOUCH_INPUT_MAX_LENGTH) {
+      text += ch;
+      if (layout == 1) layout = 0;  // shift for one letter
+    } else if (action == KeyBackspace && !text.empty()) {
+      text.back() = 0;
+      text.pop_back();
+    } else if (action == KeyShift) {
+      layout = layout == 1 ? 0 : 1;
+    } else if (action == KeySymbols) {
+      layout = 2;
+    } else if (action == KeyLetters) {
+      layout = 0;
+    } else if (action == KeyToggleShow) {
+      reveal = !reveal;
+    }
+    redraw();
+  }
+
+  if (!done) {
+    memzero((void*)text.data(), text.size());
+    text.clear();
+  }
+  isHot = wasHot;
+  buttonOk.reset();
+  return done;
+}
+
+int chooseOption(const char* title, const std::vector<std::string>& options) {
+  bool wasHot = isHot;
+  isHot = true;
+  buttonOk.reset();
+  drawMenu(title, options);
+  int choice = -1;
+  uint64_t lastActivity = millis();
+  int16_t x, y;
+  while (waitForTap(x, y, lastActivity)) {
+    choice = menuHit(options.size(), x, y);
+    if (choice >= 0) break;
+  }
+  isHot = wasHot;
+  buttonOk.reset();
+  return choice;
+}
+#endif
 
 void setStateConnected(Connection conn) {
   log_d("Interface connected: %s (%d)", conn > 0 ? "true" : "false", conn);
