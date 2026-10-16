@@ -168,7 +168,11 @@ bool waitForApproval(const char* text, RgbColor color) {
     wallet.timeLastActivity = millis();
   }
 
-#ifndef DISPLAY_SMALL
+#if defined(TOUCH_BUTTONS)
+  log_d("Display: %s", text);
+  touchBegin();
+  drawTextButtons(text, {"Reject", "Approve"});
+#elif !defined(DISPLAY_SMALL)
   // tell the user how to answer
   std::string prompt = std::string(text) + "\n\n" DISPLAY_LINE_NOTE DISPLAY_HINT_APPROVE "\n" DISPLAY_LINE_NOTE DISPLAY_HINT_REJECT;
   displayMessage(prompt.c_str());
@@ -193,6 +197,16 @@ bool waitForApproval(const char* text, RgbColor color) {
   while ((millis() - startTime) < TIMEOUT_WAIT_FOR_APPROVAL) {
     updateUi();
 
+#ifdef TOUCH_BUTTONS
+    int16_t x, y;
+    if (touchTapped(x, y)) {
+      int hit = buttonBarHit(2, x, y);
+      if (hit >= 0) {
+        isApproved = hit == 1;
+        break;
+      }
+    }
+#endif
 #ifdef BUTTON_LAYOUT_MAIN_TWO
     if (buttonCancel.isShortPressed()) {
       isApproved = false;
@@ -230,7 +244,11 @@ bool waitForApproval(const char* text, RgbColor color) {
 
 // show a notice until the user presses a button or the approval timeout runs out
 void waitForDismiss(const char* text) {
-#ifndef DISPLAY_SMALL
+#if defined(TOUCH_BUTTONS)
+  log_d("Display: %s", text);
+  touchBegin();
+  drawTextButtons(text, {"Close"});
+#elif !defined(DISPLAY_SMALL)
   std::string notice = std::string(text) + "\n\n" DISPLAY_LINE_NOTE DISPLAY_HINT_CLOSE;
   displayMessage(notice.c_str());
 #else
@@ -244,6 +262,10 @@ void waitForDismiss(const char* text) {
   while ((millis() - startTime) < TIMEOUT_WAIT_FOR_APPROVAL) {
     updateUi();
     if (buttonOk.isShortPressed() || buttonCancel.isShortPressed()) break;
+#ifdef TOUCH_BUTTONS
+    int16_t x, y;
+    if (touchTapped(x, y) && buttonBarHit(1, x, y) >= 0) break;
+#endif
     delay(5);
   }
   buttonOk.reset();

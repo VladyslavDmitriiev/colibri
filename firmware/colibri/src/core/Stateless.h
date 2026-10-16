@@ -13,5 +13,9 @@ void statelessShowLocked();
 // blocking, true if the wallet got unlocked; the camera must be off, touch active.
 // With `scan` passwords and the passphrase can also come from a QR code.
 bool statelessUnlock(TextScanner scan = nullptr);
+// adds or changes the BIP39 passphrase of the unlocked wallet, or removes it, after the
+// user confirmed the new address; the wallet stays as it was otherwise
+void statelessSetPassphrase(TextScanner scan = nullptr);
+void statelessRemovePassphrase();
 
 #endif

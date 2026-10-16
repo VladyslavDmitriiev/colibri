@@ -68,6 +68,33 @@ static bool readKernWallets(std::vector<KernWallet>& wallets) {
 
 void statelessShowLocked() { displayMessage(DISPLAY_LOCKED_STATELESS); }
 
+static std::string unlockedName;
+
+// the user compares the address with the one their wallet app knows; like wallet apps
+// the start and end are big, as people compare those, the whole address below
+static bool confirmAddress(const char* title) {
+  std::string address = wallet.getAddress();
+  std::string grouped = address.substr(0, 6);
+  for (size_t i = 6; i < address.size(); i += 4) grouped += " " + address.substr(i, 4);
+  std::string confirm = std::string(DISPLAY_LINE_TITLE) + title + "\n" + unlockedName +
+      (wallet.hasStatelessPassphrase() ? " + passphrase" : "") + "\n\n" DISPLAY_LINE_BIG + address.substr(0, 6) +
+      "..." + address.substr(address.size() - 4) + "\n" DISPLAY_LINE_NOTE + grouped +
+      "\n\n" DISPLAY_LINE_NOTE "Same start and end as in your wallet app?" +
+      (wallet.hasStatelessPassphrase() ? " A typo in the passphrase gives another wallet." : "");
+  return waitForApproval(confirm.c_str());
+}
+
+// derives the wallet with `passphrase`, back to the previous one if the user rejects the address
+static void applyPassphrase(const std::string& passphrase) {
+  std::string previous = wallet.getStatelessPassphrase();
+  displayMessage(DISPLAY_DECRYPTING);
+  WalletResponse r = wallet.setStatelessPassphrase(passphrase);
+  if (r.status >= Ok && !confirmAddress(passphrase.empty() ? "WITHOUT PASSPHRASE" : "PASSPHRASE WALLET")) {
+    wallet.setStatelessPassphrase(previous);
+  }
+  wipe(previous);
+}
+
 bool statelessUnlock(TextScanner scan) {
   displayMessage(DISPLAY_READING_SD);
   std::vector<KernWallet> wallets;
@@ -120,35 +147,35 @@ bool statelessUnlock(TextScanner scan) {
     return false;
   }
 
-  std::string passphrase;
-  int choice = chooseOption("BIP39 passphrase?", {"No passphrase", "Enter passphrase"});
-  if (choice < 0 || (choice == 1 && !readText("BIP39 passphrase", passphrase, true, scan))) {
-    mnemonic_clear();
-    return false;
-  }
-
+  // as in Kern a passphrase is added later from the menu
   displayMessage(DISPLAY_DECRYPTING);
-  WalletResponse r = wallet.unlockStateless(mnemonic, passphrase.c_str());
+  WalletResponse r = wallet.unlockStateless(mnemonic, "");
   mnemonic_clear();
-  wipe(passphrase);
   if (r.status < Ok) {
     waitForDismiss(DISPLAY_KEF_UNSUPPORTED);
     return false;
   }
-
-  // the user compares the address with the one their wallet app knows
-  // like wallet apps: start and end big, as people compare those, the whole address below
-  std::string address = wallet.getAddress();
-  std::string grouped = address.substr(0, 6);
-  for (size_t i = 6; i < address.size(); i += 4) grouped += " " + address.substr(i, 4);
-  std::string confirm = DISPLAY_LINE_TITLE "YOUR WALLET\n" + w.name + "\n\n" DISPLAY_LINE_BIG + address.substr(0, 6) +
-      "..." + address.substr(address.size() - 4) + "\n" DISPLAY_LINE_NOTE + grouped +
-      "\n\n" DISPLAY_LINE_NOTE "Same start and end as in your wallet app? A typo in the passphrase gives another wallet.";
-  if (!waitForApproval(confirm.c_str())) {
+  unlockedName = w.name;
+  if (!confirmAddress("YOUR WALLET")) {
     wallet.lock();
     return false;
   }
   return true;
+}
+
+void statelessSetPassphrase(TextScanner scan) {
+  std::string passphrase;
+  if (!readText("BIP39 passphrase", passphrase, true, scan) || passphrase.empty()) {
+    wipe(passphrase);
+    return;
+  }
+  applyPassphrase(passphrase);
+  wipe(passphrase);
+}
+
+void statelessRemovePassphrase() {
+  std::string none;
+  applyPassphrase(none);
 }
 
 #endif

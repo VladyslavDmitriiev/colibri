@@ -3,10 +3,17 @@
 
 #include "../../config.h"
 
-// Capacitive touch panels on I2C, read by polling. Boards whose camera shares the bus
-// call touchBegin() only while the camera is stopped.
+// Capacitive touch panels on I2C, read by polling. A camera whose own SCCB driver takes the
+// touch pins allows touchBegin() only while it is stopped; one that shares the open bus
+// (CAMERA_GPIO_SIOD -1) leaves touch usable while scanning.
 #if defined(TOUCH_FT5X06_I2C_ADDR)
   #define TOUCH_ENABLED
+  #if defined(CAMERA_ENABLED) && CAMERA_GPIO_SIOD != -1 && CAMERA_GPIO_SIOD == TOUCH_GPIO_I2C_SDA
+    #define TOUCH_BUS_TAKEN_BY_CAMERA
+  #else
+    // touch works on every screen: approvals, notices and scanning get on-screen buttons
+    #define TOUCH_BUTTONS
+  #endif
 
 void touchBegin();
 void touchEnd();

@@ -9,6 +9,10 @@
 
 #if defined(CAMERA_ENABLED)
 
+#ifdef STATELESS_MODE
+static bool scanTextQr(std::string& text) { return cameraInterface.scanText(text); }
+#endif
+
 esp_err_t camera_init() {
   // zero-initialise: the driver reads fields we don't set explicitly
   camera_config_t config = {};
@@ -85,6 +89,9 @@ void CameraInterface::init() {
   }
 
   resetDecoder();
+  #if defined(STATELESS_MODE) && defined(TOUCH_BUTTONS)
+  setPreviewButtons({"Menu"});
+  #endif
   initialised = true;
   log_d("Camera initialized successfully");
 }
@@ -105,7 +112,7 @@ void CameraInterface::update() {
     }
     int16_t x, y;
     if (touchTapped(x, y)) {
-      statelessUnlock([](std::string& text) { return cameraInterface.scanText(text); });
+      statelessUnlock(scanTextQr);
       isLockShown = false;
     }
 #endif
@@ -131,8 +138,14 @@ void CameraInterface::update() {
   }
 
   // result QR stays on screen until dismissed, so we don't rescan the same request
+  #ifdef TOUCH_BUTTONS
+  int16_t tapX = -1, tapY = -1;
+  bool tapped = touchTapped(tapX, tapY);
+  #else
+  const bool tapped = false;
+  #endif
   if (isShowingResult) {
-    if (buttonOk.isShortPressed() || millis() - timeResultShown > CAMERA_RESULT_TIMEOUT) {
+    if (buttonOk.isShortPressed() || tapped || millis() - timeResultShown > CAMERA_RESULT_TIMEOUT) {
       isShowingResult = false;
       showIdle();
     }
@@ -140,7 +153,11 @@ void CameraInterface::update() {
   }
 
   #ifdef STATELESS_MODE
-  if (buttonOk.isShortPressed()) {
+  bool menuTapped = false;
+    #ifdef TOUCH_BUTTONS
+  menuTapped = tapped && buttonBarHit(1, tapX, tapY) == 0;
+    #endif
+  if (buttonOk.isShortPressed() || menuTapped) {
     showMenu();
     return;
   }
@@ -361,6 +378,9 @@ bool CameraInterface::scanText(std::string& text) {
   bool wasOn = isSensorOn;
   if (!isSensorOn) startSensor();
   if (!isSensorOn) return false;
+  #ifdef TOUCH_BUTTONS
+  setPreviewButtons({"Back"});
+  #endif
   displayMessage(DISPLAY_SCAN_TEXT_QR);
   setStatus(DISPLAY_SCAN_TEXT_QR);
   buttonOk.reset();
@@ -370,6 +390,10 @@ bool CameraInterface::scanText(std::string& text) {
   while (!found && millis() - start < TIMEOUT_TOUCH_INPUT) {
     updateUi();
     if (buttonOk.isShortPressed()) break;
+  #ifdef TOUCH_BUTTONS
+    int16_t x, y;
+    if (touchTapped(x, y) && buttonBarHit(1, x, y) == 0) break;
+  #endif
     found = scanFrame(text);
     frames++;
   }
@@ -377,6 +401,9 @@ bool CameraInterface::scanText(std::string& text) {
   // the decoder keeps the last payload, it may be a password
   memzero(qrData->payload, sizeof(qrData->payload));
   if (!wasOn) stopSensor();
+  #ifdef TOUCH_BUTTONS
+  setPreviewButtons({"Menu"});
+  #endif
   buttonOk.reset();
   return found;
 }
@@ -385,14 +412,23 @@ bool CameraInterface::scanText(std::string& text) {
 void CameraInterface::showMenu() {
   stopSensor();
   touchBegin();
-  int choice = chooseOption("MENU", {"Pair wallet app", "Lock", "Back"});
-  touchEnd();
-  if (choice == 1) {
+  bool hasPassphrase = wallet.hasStatelessPassphrase();
+  std::vector<std::string> options = {"Pair wallet app", hasPassphrase ? "Change passphrase" : "Add passphrase"};
+  if (hasPassphrase) options.push_back("Remove passphrase");
+  options.push_back("Lock");
+  options.push_back("Back");
+  int choice = chooseOption("MENU", options);
+  std::string picked = choice >= 0 ? options[choice] : "Back";
+  if (picked == "Lock") {
+    touchEnd();
     wallet.lock();
     return;
   }
+  if (picked == "Add passphrase" || picked == "Change passphrase") statelessSetPassphrase(scanTextQr);
+  if (picked == "Remove passphrase") statelessRemovePassphrase();
+  touchEnd();
   startSensor();
-  if (choice == 0 && isSensorOn) {
+  if (picked == "Pair wallet app" && isSensorOn) {
     // pairing QR (`ur:crypto-hdkey`) for MetaMask, Rabby etc.
     WalletResponse r = wallet.urRequestPair();
     if (r.status >= Ok) {

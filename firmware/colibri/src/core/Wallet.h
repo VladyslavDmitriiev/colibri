@@ -51,6 +51,11 @@ class Wallet {
 #ifdef STATELESS_MODE
   // key from a mnemonic that only lives in RAM, until lock()
   WalletResponse unlockStateless(const char* mnemonic, const char* bip39Passphrase);
+  // derives the unlocked stateless wallet again with another BIP39 passphrase, "" for none
+  WalletResponse setStatelessPassphrase(const std::string& bip39Passphrase);
+  bool hasStatelessPassphrase() { return !statelessPassphrase.empty(); }
+  // a copy the caller wipes, to go back when a new passphrase isn't confirmed
+  std::string getStatelessPassphrase() { return statelessPassphrase; }
 #endif
   WalletResponse wipeRemote(bool interfacesOnly = false);
   WalletResponse selectWallet(
@@ -77,6 +82,11 @@ class Wallet {
  protected:
   bool locked;
   bool hasStatelessKey = false;
+#ifdef STATELESS_MODE
+  // kept so a passphrase can be added after unlocking, as Kern does; wiped by lock()
+  std::string statelessMnemonic;
+  std::string statelessPassphrase;
+#endif
   uint8_t pwHash[HASH_LENGTH];
   HDNode hdNode;
 

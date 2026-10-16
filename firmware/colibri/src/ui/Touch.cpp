@@ -23,8 +23,11 @@ static int16_t simulatedX, simulatedY;
 
 void touchBegin() {
   if (isActive) return;
+    #ifdef TOUCH_BUS_TAKEN_BY_CAMERA
   // Wire.begin() is a no-op while Wire thinks it still owns the pins
   Wire.end();
+  #endif
+  // with a shared bus it stays open for the camera's SCCB, begin() is a no-op then
   Wire.begin(TOUCH_GPIO_I2C_SDA, TOUCH_GPIO_I2C_SCL, TOUCH_I2C_FREQ);
   isActive = true;
   wasPressed = false;
@@ -32,8 +35,13 @@ void touchBegin() {
 }
 
 void touchEnd() {
+  #ifdef TOUCH_BUTTONS
+  return;  // nothing else needs the bus to itself
+  #endif
   if (!isActive) return;
-  Wire.end();
+  #ifdef TOUCH_BUS_TAKEN_BY_CAMERA
+  Wire.end();  // the camera's own SCCB driver takes the pins
+  #endif
   isActive = false;
 }
 

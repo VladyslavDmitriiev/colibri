@@ -131,7 +131,7 @@ const char DISPLAY_CONNECTED[] = "Connected";
 const char DISPLAY_NOT_CONNECTED[] = "Not Connected";
 const char DISPLAY_LOCKED[] = "Locked";
 const char DISPLAY_SCAN_QR[] = "Scan QR";
-const char DISPLAY_SCAN_TEXT_QR[] = "Scan text QR, button: back";
+const char DISPLAY_SCAN_TEXT_QR[] = "Scan text QR";
 const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 #ifdef BUTTON_LAYOUT_MAIN_TWO
   #define DISPLAY_HINT_APPROVE "Approve: press OK"
@@ -153,7 +153,7 @@ const char DISPLAY_SCAN_PROGRESS[] = "Scanning %d%%";
 const char DISPLAY_LOCKED_STATELESS[] =
     DISPLAY_LINE_TITLE "LOCKED\n\n"
     "Tap the screen to unlock with your Kern wallet from the SD card.\n\n"
-    DISPLAY_LINE_NOTE "Hold the button to lock again later.";
+    DISPLAY_LINE_NOTE "Lock it again from the menu under the camera picture.";
 const char DISPLAY_READING_SD[] = "Reading the SD card...";
 const char DISPLAY_NO_SD_CARD[] =
     DISPLAY_LINE_WARNING "NO SD CARD\n" DISPLAY_LINE_NOTE "Insert the SD card with your Kern wallet.";

@@ -55,8 +55,8 @@
 #define CAMERA_GPIO_PWDN -1
 #define CAMERA_GPIO_RESET -1
 #define CAMERA_GPIO_XCLK 38
-#define CAMERA_GPIO_SIOD BOARD_GPIO_I2C_SDA  // own SCCB driver, `boardInit()` releases the bus
-#define CAMERA_GPIO_SIOC BOARD_GPIO_I2C_SCL
+#define CAMERA_GPIO_SIOD -1  // SCCB shares the touch panel's I2C bus, opened by `boardInit()`
+#define CAMERA_GPIO_SIOC -1
 #define CAMERA_GPIO_D7 21
 #define CAMERA_GPIO_D6 39
 #define CAMERA_GPIO_D5 40
@@ -105,8 +105,5 @@ static void boardInit() {
   delay(10);
   boardWriteRegister(BOARD_I2C_ADDR_TCA9554, 0x01, ioOutput | (1 << BOARD_TCA9554_LCD_RST_BIT));
   delay(120);
-
-  // hand the bus over to the camera's SCCB driver
-  Wire.end();
 }
 #define BOARD_INIT boardInit

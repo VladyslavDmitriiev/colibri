@@ -94,8 +94,9 @@ static int32_t lineHeight(LovyanGFX& gfx, const TextLine& line, const TextTier& 
 // Centered text, multiple lines separated by `\n`, each optionally styled by a DISPLAY_LINE_*
 // prefix. Long lines wrap, and the text falls back to smaller fonts if it doesn't fit.
 // renders on the panel or, for screenshots, on a sprite
-static void renderText(LovyanGFX& gfx, const char* message) {
+static void renderText(LovyanGFX& gfx, const char* message, int32_t bottomReserve = 0) {
   gfx.fillScreen(DISPLAY_COLOR_BG);
+  const int32_t areaHeight = gfx.height() - bottomReserve;
 
   const int32_t padding = 10;
   const size_t tierCount = sizeof(textTiers) / sizeof(textTiers[0]);
@@ -108,10 +109,10 @@ static void renderText(LovyanGFX& gfx, const char* message) {
     lines = layoutText(gfx, message, *tier, gfx.width() - 2 * padding);
     totalHeight = 0;
     for (const TextLine& line : lines) totalHeight += lineHeight(gfx, line, *tier);
-    if (totalHeight <= gfx.height() - 2 * padding) break;
+    if (totalHeight <= areaHeight - 2 * padding) break;
   }
 
-  int32_t y = (gfx.height() - totalHeight) / 2;
+  int32_t y = (areaHeight - totalHeight) / 2;
   gfx.setTextDatum(middle_center);
   for (const TextLine& line : lines) {
     int32_t h = lineHeight(gfx, line, *tier);
@@ -122,6 +123,40 @@ static void renderText(LovyanGFX& gfx, const char* message) {
 
   gfx.drawRect(5, 5, gfx.width() - 10, gfx.height() - 10, DISPLAY_COLOR_FRAME);
 }
+
+// ===== Touch buttons along the bottom ===== //
+
+static const int32_t BUTTON_BAR_HEIGHT = 76;
+static std::vector<std::string> previewButtons;
+
+// the last of several buttons is the primary one
+static void renderButtonBar(LovyanGFX& gfx, const std::vector<std::string>& labels) {
+  if (labels.empty()) return;
+  const int32_t top = gfx.height() - BUTTON_BAR_HEIGHT, n = labels.size();
+  const int32_t w = (gfx.width() - 16) / n;
+  gfx.setFont(&fonts::AsciiFont8x16);
+  gfx.setTextSize(1.5f);
+  gfx.setTextDatum(middle_center);
+  for (int32_t i = 0; i < n; i++) {
+    int32_t x = 8 + i * w + 4, y = top + 6, bw = w - 8, bh = BUTTON_BAR_HEIGHT - 20;
+    if (n > 1 && i == n - 1) {
+      gfx.fillRoundRect(x, y, bw, bh, 8, DISPLAY_COLOR_FRAME);
+      gfx.setTextColor(DISPLAY_COLOR_BG);
+    } else {
+      gfx.drawRoundRect(x, y, bw, bh, 8, n > 1 ? TFT_LIGHTGREY : DISPLAY_COLOR_FRAME);
+      gfx.setTextColor(DISPLAY_COLOR_TEXT);
+    }
+    gfx.drawString(labels[i].c_str(), x + bw / 2, y + bh / 2);
+  }
+}
+
+int buttonBarHit(size_t count, int16_t x, int16_t y) {
+  if (count == 0 || y < DISPLAY_HEIGHT - BUTTON_BAR_HEIGHT || x < 8 || x >= DISPLAY_WIDTH - 8) return -1;
+  size_t i = (x - 8) / ((DISPLAY_WIDTH - 16) / count);
+  return i < count ? (int)i : (int)count - 1;
+}
+
+void setPreviewButtons(const std::vector<std::string>& labels) { previewButtons = labels; }
 
 #ifdef DEBUG_REMOTE_CONTROL
 // draws the screen on the panel again, for screenshots; empty while it shows a camera frame or a QR code
@@ -136,6 +171,20 @@ void drawText(const char* message) {
   display.startWrite();
   display.clearDisplay();
   renderText(display, message);
+  display.endWrite();
+}
+
+void drawTextButtons(const char* message, const std::vector<std::string>& labels) {
+  #ifdef DEBUG_REMOTE_CONTROL
+  std::string text = message;
+  lastScreen = [text, labels](LovyanGFX& gfx) {
+    renderText(gfx, text.c_str(), BUTTON_BAR_HEIGHT);
+    renderButtonBar(gfx, labels);
+  };
+  #endif
+  display.startWrite();
+  renderText(display, message, BUTTON_BAR_HEIGHT);
+  renderButtonBar(display, labels);
   display.endWrite();
 }
 
@@ -187,7 +236,9 @@ void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const c
     display.setFont(&fonts::Font0);
     display.setTextSize(2.0f);
     display.setTextDatum(middle_center);
-    display.drawString(status, display.width() / 2, h + (display.height() - h) / 2);
+    int32_t bottom = display.height() - (previewButtons.empty() ? 0 : BUTTON_BAR_HEIGHT);
+    display.drawString(status, display.width() / 2, h + (bottom - h) / 2);
+    renderButtonBar(display, previewButtons);
   }
   display.endWrite();
 }
@@ -453,7 +504,7 @@ static void renderMenu(LovyanGFX& gfx, const std::string& title, const std::vect
     start = end + 1;
   }
   gfx.setTextDatum(middle_center);
-  gfx.setTextSize(2);
+  gfx.setTextSize(1.5f);
   for (size_t i = 0; i < options.size(); i++) {
     int32_t top = MENU_TOP + i * MENU_ITEM_HEIGHT;
     gfx.drawRoundRect(16, top + 4, gfx.width() - 32, MENU_ITEM_HEIGHT - 8, 8, DISPLAY_COLOR_FRAME);

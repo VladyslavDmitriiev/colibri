@@ -7,10 +7,19 @@
 #ifdef DISPLAY_ENABLED
   #include <qrcode.h>
 
+  #include <string>
+  #include <vector>
+
   #include "PolymorphicLGFX.h"
 
 void initDisplay();
 void drawText(const char* message);
+// text with touch buttons along the bottom, the last one is the primary action
+void drawTextButtons(const char* message, const std::vector<std::string>& labels);
+// index of the bottom button at x, y, or -1
+int buttonBarHit(size_t count, int16_t x, int16_t y);
+// buttons under the camera preview, drawn with its status line
+void setPreviewButtons(const std::vector<std::string>& labels);
 void drawQrCode(esp_qrcode_handle_t qrcode);
 void drawCameraPreview(const uint8_t* gray, size_t width, size_t height, const char* status);
 
